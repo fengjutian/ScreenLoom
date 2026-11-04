@@ -1,0 +1,27 @@
+//! 调色板（对齐微信截图工具的标注色板）。
+//!
+//! 微信侧证据：反射成员表 `wx::ColorPanel` 的 `signalColorSelect` / `color`。
+
+use crate::image::Rgba;
+
+/// 默认标注色板（红、橙、黄、绿、青、蓝、紫、粉、白）。
+pub const PALETTE: [Rgba; 9] = [
+    Rgba::rgb(0xFA, 0x51, 0x51),
+    Rgba::rgb(0xFF, 0x7F, 0x00),
+    Rgba::rgb(0xFA, 0xC2, 0x00),
+    Rgba::rgb(0x07, 0xC1, 0x60),
+    Rgba::rgb(0x00, 0xC3, 0x75),
+    Rgba::rgb(0x10, 0xAE, 0xFF),
+    Rgba::rgb(0x7D, 0x5A, 0xFF),
+    Rgba::rgb(0xFF, 0x4D, 0xA9),
+    Rgba::rgb(0xFF, 0xFF, 0xFF),
+];
+
+/// 选区遮罩（选区外压暗）。
+pub const MASK_ALPHA: u8 = 0x99;
+
+/// 选区边框色。
+pub const BORDER: Rgba = Rgba::rgb(0x00, 0xC3, 0x75);
+
+/// 文字默认色。
+pub const TEXT: Rgba = Rgba::rgb(0xFF, 0xFF, 0xFF);

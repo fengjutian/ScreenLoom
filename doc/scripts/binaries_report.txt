@@ -1,0 +1,770 @@
+# 二进制字符串扫描报告
+# 目录: D:\TencentWeixin\Weixin\4.1.15.13
+# 时间: 2026-11-04 15:36:46
+# 文件数: 23   扫描耗时: 见末尾
+
+==========================================================================================
+### ConfSdk.dll  (1.2 MB)
+  capture                2
+  -- capture:
+     @    1013488 EMethodAudioCaptureHealth,switch_flag_bit:%d
+     @    1146176 RtlCaptureContext
+
+==========================================================================================
+### RadiumWMPF.bin  (412.4 MB)
+  capture                1842
+  gdi                    366
+  bitmap                 273
+  dxgi                   250
+  clipboard              132
+  screenshot             72
+  wgc                    56
+  grab                   46
+  U16:gdi                23
+  U16:capture            20
+  snip                   17
+  printwindow            7
+  U16:dxgi               4
+  U16:clipboard          2
+  opencv                 1
+  screenshott            1
+  U16:bitmap             1
+  U16:screenshot         1
+  CJK_截图                 16
+  -- U16:bitmap:
+     @  251902954 Windows.Graphics.Imaging.SoftwareBitmap
+  -- U16:capture:
+     @  254116250 MFCaptureEngine.dll
+     @  260201980   // capture group name is allowed because it is in a separate branch.
+     @  260217316         state.raise("Invalid named capture referenced");
+     @  260238566               { state.raise("Duplicate capture group name"); }
+     @  260238756           state.raise("Duplicate capture group name");
+     @  260240074       state.raise("Invalid capture group name");
+  -- U16:clipboard:
+     @  271846494 CanIncludeInClipboardHistory
+     @  271846552 CanUploadToCloudClipboard
+  -- U16:dxgi:
+     @  253702680  dxgi.dll
+     @  319118451  dxgi.dll
+     @  334653903 dxgi.dll
+     @  380112874 dxgi.dll
+  -- U16:gdi:
+     @   10324054 gdiplus
+     @   10353774 gdiplustext
+     @   11039964 gdisplay_card
+     @  260198488   var ecma10ScriptValues = ecma9ScriptValues + " Dogra Dogr Gunjala_Gondi Gong Hanifi_Rohingya Rohg Makasar Maka Medefaidrin Medf Old_Sogdian Sogo Sog
+     @  260276712     return this.regexp_eatClassStringDisjunction(state) || this.regexp_eatNestedClass(state)
+     @  260278344   // https://tc39.es/ecma262/#prod-ClassStringDisjunction
+  -- U16:screenshot:
+     @  257446558 ScreenShot
+  -- bitmap:
+     @    5161961 3..\..\third_party\skia\src\core\SkBitmap.cpp
+     @    5818432 CreateBitmap
+     @   11482392 CreateCompatibleBitmap
+     @   11482440 CreateDIBitmap
+     @   11483196 GetBitmapBits
+     @   11483212 SetBitmapBits
+  -- capture:
+     @    5196437 content_capture
+     @    5196853 gpu.capture
+     @    5202452 disabled-by-default-video_and_image_capture
+     @    5243551 net-log-capture-mode
+     @    5568484 U_REGEX_INVALID_CAPTURE_GROUP_NAME
+     @    5816712 RtlCaptureContext
+  -- clipboard:
+     @   11096462 OpenClipboard fail
+     @   11096550 SetClipboardData fail
+     @   11482282 SetClipboardData
+     @   11482302 EmptyClipboard
+     @   11482320 CloseClipboard
+     @   11482338 OpenClipboard
+  -- dxgi:
+     @    5145874 Error: DXGI_ERROR_INVALID_CALL
+     @  208535242 DXGIt
+     @  208572807 FhDXGI
+     @  251894096 [OSR] Invalid DXGI handle, size:
+     @  251896715  Failed to get IDXGIDevice, hr=
+     @  251896747  Failed to get IDXGIAdapter, hr=
+  -- gdi:
+     @    5285350 gdils-ert
+     @    5710502 ..\..\base\debug\gdi_debug_util_win.cc
+     @    5710572  GDI Handle Table Failed 
+     @    5748841 Old_Sogdian
+     @    5748853 Old_Sogdian
+     @    5748866 Sogdian
+  -- grab:
+     @    5160405 kGrab
+     @    5160411 kGrabbing
+     @  251816126 GrabSnapshotDelayed
+     @  252245279 kGrab
+     @  252245285 kGrabbing
+     @  254636900 Grabba International
+  -- opencv:
+     @  254935549 Stephan Electronics OpenCVMeter
+  -- printwindow:
+     @  257443538 PRINTER_LOG, ~IndependentPrintWindow webview_id=
+     @  257443587 PRINTER_LOG, IndependentPrintWindow::Init. config:
+     @  257443806 PRINTER_LOG, IndependentPrintWindow::Show
+     @  274796967 Both PrintWindow() and BitBlt() failed.
+     @  280257994 PrintWindow
+     @  334700231 Both PrintWindow() and BitBlt() failed.
+  -- screenshot:
+     @    5200241 disabled-by-default-devtools.screenshot
+     @  251757736 ..\..\flue\browser\xweb_use\command\cdp_command_capture_screenshot.cc
+     @  251757806 CdpCommandCaptureScreenshot: wxam
+     @  251757851 max_waiting_time_before_screenshot
+     @  251757929 CdpCommandCaptureScreenshot: pre_capture_wait=
+     @  251758096 CdpCommandCaptureScreenshot::DoCapture: 
+  -- screenshott:
+     @  257474830 ScreenshotTabView
+  -- snip:
+     @  253282718 [graphite] ** ERROR ** Unknown snippet ID in key: %d
+     @  253282839 UnknownCodeSnippetID:
+     @  265790607   class SourceSnippet {
+     @  265792097   async function getSourceSnippet(location, delta = 5) {
+     @  265792267     return new SourceSnippet(location, delta, scriptSource);
+     @  265792922       return getSourceSnippet(this.location, delta);
+  -- wgc:
+     @  257062578 , allow_wgc_screen_capturer: 
+     @  257062608 , allow_wgc_window_capturer: 
+     @  257062638 , allow_wgc_zero_hertz: 
+     @  257062663 , wgc_require_border: 
+     @  257256699 UseFullScreenHeuristicForWgc
+     @  260377488     var bytes = Buffer2.from("AGFzbQEAAAAB5wRNYAAAYAABf2AAAX5gAX8AYAF/AX9gAX8BfmABfwF8YAJ/fwBgAn9/AX9gAn9/AX5gAn9/AXxgA39/fwBgA39/fwF/YAN/f38BfmAEf39/
+
+==========================================================================================
+### VoipEngine.dll  (19.9 MB)
+  dxgi                   17
+  capture                13
+  gdi                    12
+  bitmap                 9
+  U16:dxgi               1
+  -- U16:dxgi:
+     @   16331520 dxgi.dll
+  -- bitmap:
+     @   16261560 EMethodGetAudioHealthStatus success: bitmap=0x%X
+     @   16261872 EMethodGetAudioHealthStatusCurrent success: bitmap=0x%X
+     @   16261936 EMethodGetAudioHealthStatusCurrent failed: XVE_GetAudioHealthStatusBitmapCurrent returned error
+     @   16328352 GetAudioHealthStatusBitmapCurrent failed: audio engine not initialized
+     @   16328424 CMVQQEngine::GetAudioHealthStatusBitmapCurrent
+     @   16328472 GetAudioHealthStatusBitmapCurrent success: bitmap=0x%X
+  -- capture:
+     @   16261160 EMethodAudioCaptureHealth, m_uiAudioCaptureHealthFlag:%d
+     @   16305720 u32AudioCaptureHealthMagOverload
+     @   16305760 u32AudioCaptureHealthLongSilent
+     @   16305792 u32AudioCaptureHealthSamplelost
+     @   16305824 u32AudioCaptureHealthBandwidthAnomaly
+     @   16306112 u32AudioCaptureHealthIntermittentSilent
+  -- dxgi:
+     @   16331544 CreateDXGIFactory1
+     @   16331584 GetDXGIDeviceType
+     @   16331880 MFCreateDXGIDeviceManager
+     @   16414704 [D3D11Dec] CreateDXGIFactory1 failed under strict bind: 0x%08X
+     @   16414816 [D3D11Dec] MFCreateDXGIDeviceManager failed: 0x%08X
+     @   16503911 L[GPUPROBE] LoadLibrary dxgi.dll failed, err=%lu
+  -- gdi:
+     @    9241395 GDIcW@;
+     @    9241638 GDIcW@;
+     @   10130932 McGDI
+     @   16268592 %s - L%d: QoS P2S seq[%d], llVDelay[%lld], u32RecvDataInterval[%d],usRemoteMemberId[%d],u16RemoteEngineVer[%d],usStreamID[%d],usVEstBW[%d(%d)],usVRemo
+     @   16307088 u32LongDisorder
+     @   16501152 b4G4GDirect_MinUsed = true
+
+==========================================================================================
+### WeChatOcr.bin  (49.5 MB)
+  opencv                 256
+  dxgi                   19
+  capture                12
+  gdi                    10
+  bitmap                 5
+  -- bitmap:
+     @   46185883 Windows bitmap (*.bmp;*.dib)
+     @   46187643 Portable bitmap(.pgm) expects gray image
+     @   46187691 Portable bitmap(.ppm) expects BGR image
+     @   46187731 For portable bitmap(.pbm) type must be CV_8UC1
+     @   51057571 .?AVBinaryBitmap@zxing@@
+  -- capture:
+     @   47660291 RtlCaptureContext
+     @   48057243 SceneCaptureType
+     @   48434947 VK_LAYER_RENDERDOC_Capture
+     @   48469627 vkGetBufferOpaqueCaptureAddressKHR
+     @   48469675 [Vulkan] Failed to get device proc address of 'vkGetBufferOpaqueCaptureAddressKHR'
+     @   48469763 vkGetDeviceMemoryOpaqueCaptureAddressKHR
+  -- dxgi:
+     @   48428067 dxgi.dll
+     @   48428083 [D3D] Failed to load dxgi.dll
+     @   48428163 CreateDXGIFactory1
+     @   48428187 [D3D] CreateDXGIFactory1() NOT found, fall back to CreateDXGIFactory()
+     @   48428259 CreateDXGIFactory
+     @   48428307 [D3D] Failed to get proc address of CreateDXGIFactory1
+  -- gdi:
+     @    8530124 U=GdI
+     @   42936711 gl_FragDI
+     @   46113514     Extra dependencies:          wsock32 comctl32 gdi32 ole32 setupapi ws2_32
+     @   48057843 ImgDirectionRef
+     @   48057859 ImgDirection
+     @   48420019 glVertexBindingDivisor
+  -- opencv:
+     @   38304395 opencv_sH+
+     @   46031083 F:\devops-wv\workspace\p-58a747019add42b9910587f502ebb9cd\src\opencv-4.5.5\modules\core\src\matrix.cpp
+     @   46034843 F:\devops-wv\workspace\p-58a747019add42b9910587f502ebb9cd\src\opencv-4.5.5\modules\imgproc\src\resize.cpp
+     @   46035771 F:\devops-wv\workspace\p-58a747019add42b9910587f502ebb9cd\src\opencv-4.5.5\modules\core\include\opencv2/core/utils/buffer_area.private.hpp
+     @   46041131 F:\devops-wv\workspace\p-58a747019add42b9910587f502ebb9cd\src\opencv-4.5.5\modules\imgproc\src\color.cpp
+     @   46041451 OPENCV_IO_MAX_IMAGE_PARAMS
+
+==========================================================================================
+### WeChatUtility.bin  (26.6 MB)
+  bitmap                 27
+  capture                13
+  gdi                    6
+  dxgi                   2
+  -- bitmap:
+     @   13117260 Codec '%s' is bitmap-based, subtitles character encoding will be ignored
+     @   13189116 image/x-xbitmap
+     @   13191484 PBM (Portable BitMap) image
+     @   13191908 BMP (Windows and OS/2 bitmap)
+     @   13194268 Bitmap Brothers JV video
+     @   13194644 XBM (X BitMap) image
+  -- capture:
+     @   13191268 TechSmith Screen Capture Codec
+     @   13195676 innoHeim/Rsupport Screen Capture Codec
+     @   13196580 FM Screen Capture Codec
+     @   13196780 Mandsoft Screen Capture Codec
+     @   13197036 MatchWare Screen Capture Codec
+     @   13197108 RemotelyAnywhere Screen Capture
+  -- dxgi:
+     @   13317460 DXGI format %d.
+     @   13317484 Unsupported DXGI format %d.
+  -- gdi:
+     @   10258418 HcGDI
+     @   11276511 uHcP8McGDIcO@H
+     @   13225788 GPSImgDirectionRef
+     @   13225822 GPSImgDirection
+     @   14624149 b4c\gdi
+     @   16027835 ?gDio
+
+==========================================================================================
+### Weixin.dll  (192.2 MB)
+  capture                148
+  gdi                    86
+  bitmap                 75
+  screenshot             63
+  dxgi                   40
+  clipboard              39
+  U16:screenshot         31
+  U16:gdi                29
+  grab                   27
+  longscreenshot         10
+  wgc                    8
+  U16:capture            5
+  opencv                 3
+  snip                   2
+  printwindow            2
+  U16:clipboard          2
+  U16:longscreenshot     2
+  shot_ocr               1
+  screen_shot            1
+  U16:bitmap             1
+  CJK_截图                 16
+  -- U16:bitmap:
+     @  151687575 fontbitmap-16.png
+  -- U16:capture:
+     @  160094880 Windows.Graphics.Capture.Direct3D11CaptureFramePool
+     @  160094992 Windows.Graphics.Capture.GraphicsCaptureItem
+     @  160095088 Windows.Graphics.Capture.GraphicsCaptureSession
+     @  162247040 Windows.Graphics.Capture.GraphicsCaptureSession
+     @  163828054 .VideoCaptureFilter
+  -- U16:clipboard:
+     @  153890352 QtClipboardView
+     @  188202752 ClipboardView
+  -- U16:gdi:
+     @  126197902 migdia
+     @  129800510 Old Sogdian
+     @  129825780 vanasogdi
+     @  129844364 muinaissogdialainen
+     @  129902164 Sogdian
+     @  129902934 Sogdian Lama
+  -- U16:longscreenshot:
+     @  190683816 longscreenshot_toolbar_button_size
+     @  190683912 longscreenshot_menu_view_style
+  -- U16:screenshot:
+     @  147956933 dscreenshot
+     @  187868456 :/gui/svg/screenshot/color_square_black.svg
+     @  187868568 :/gui/svg/screenshot/color_square_black_click.svg
+     @  187868696 :/gui/svg/screenshot/color_square_blue.svg
+     @  187868808 :/gui/svg/screenshot/color_square_blue_click.svg
+     @  187868936 :/gui/svg/screenshot/color_square_green.svg
+  -- bitmap:
+     @   62566427 e-bitmapH
+     @   62567781 -xbitmapH
+     @  149011424 ../../../../src/core/SkBitmap.cpp
+     @  149011472 %s(%d): fatal error: "SkBitmap::tryAllocPixels failed ColorType:%d AlphaType:%d [w:%d h:%d] rb:%zu"
+     @  149335992 QCursor: Cannot create bitmap cursor; invalid bitmap(s)
+     @  149345248           found bitmap scalable font (%d pixels)
+  -- capture:
+     @  148827616 QRegularExpressionMatch::captured: empty capturing group name passed
+     @  148827696 QRegularExpressionMatch::capturedRef: empty capturing group name passed
+     @  148827776 QRegularExpressionMatch::capturedView: empty capturing group name passed
+     @  148827856 QRegularExpressionMatch::capturedStart: empty capturing group name passed
+     @  148827936 QRegularExpressionMatch::capturedLength: empty capturing group name passed
+     @  148828016 QRegularExpressionMatch::capturedEnd: empty capturing group name passed
+  -- clipboard:
+     @  148458208 QGuiApplication: Must construct a QGuiApplication before accessing a QClipboard
+     @  149322736 WM_DESTROYCLIPBOARD
+     @  149322760 WM_DRAWCLIPBOARD
+     @  149322784 WM_PAINTCLIPBOARD
+     @  149322808 WM_VSCROLLCLIPBOARD
+     @  149322832 WM_SIZECLIPBOARD
+  -- dxgi:
+     @  111228275 CXDXGI
+     @  118466268 DXGIt
+     @  160880664 D3D11 DXGI Handle (Zero-Copy)
+     @  162248432 DxgiDuplicatorController failed to capture desktop, error code 
+     @  163229952 E:\x\x_rel_t7\third_party\webrtc\modules\desktop_capture\win\dxgi_duplicator_controller.cc
+     @  163230048 Count of references reaches zero, DxgiDuplicatorController will be unloaded.
+  -- gdi:
+     @   13725428 LcGDI
+     @   71519508 gDispearH
+     @  118466276 GDI u
+     @  121238520 FXGDI H
+     @  130645423 minimumGroupingDigits
+     @  133485035 en|CN_Henan_mesa|Pingdingshan
+  -- grab:
+     @   69033806 grab_timH
+     @  149010008 QPixmap::grabWidget is deprecated, use QWidget::grab() instead
+     @  149010560 this function is deprecated, use QScreen::grabWindow() instead. Defaulting to primary screen.
+     @  150850760 QGraphicsItem::ungrabMouse: cannot ungrab mouse without scene
+     @  150850832 QGraphicsItem::ungrabKeyboard: cannot ungrab keyboard without scene
+     @  150965428 Clear Grab
+  -- longscreenshot:
+     @  152716160 longscreenshot_use_grabwindow
+     @  152716192 longscreenshoter_opencvworker_thread
+     @  152716232 longscreenshoter_grab_thread
+     @  152716264 longscreenshoter_splice_thread
+     @  152716320 wechat_longscreenshot
+     @  152716352 wechat_longscreenshot_
+  -- opencv:
+     @   69032819 opencv_tH
+     @  152716192 longscreenshoter_opencvworker_thread
+     @  185899976 wx::OpenCVWorker
+  -- printwindow:
+     @  163682328 Both PrintWindow() and BitBlt() failed.
+     @  163984348 PrintWindow
+  -- screen_shot:
+     @  152265440 g_kv_ask_ai_screen_shot_user_agreement
+  -- screenshot:
+     @  149637744 gScreenshotShortcutKey
+     @  149637920 gScreenShotHideWindow
+     @  152265480 clicfg_yuanbao_screenshot_agreement_version
+     @  152265696 clicfg_yuanbao_screenshot_agreement_content
+     @  152265952 clicfg_screenshot_ask_ai_type
+     @  152716160 longscreenshot_use_grabwindow
+  -- shot_ocr:
+     @   30713755 shot_ocrH
+  -- snip:
+     @  151111048 snippet
+     @  159992264 wrong number of arguments to function snippet()
+  -- wgc:
+     @  144423835 $WGcD
+     @  162247312 E:\x\x_rel_t7\third_party\webrtc\modules\desktop_capture\win\wgc_capturer_win.cc
+     @  162247640 WebRTC.DesktopCapture.Win.WgcCapturerFrameTime
+     @  162247824 WebRTC.DesktopCapture.Win.WgcDirtyRegionSupport
+     @  162247872 WebRTC.DesktopCapture.Win.WgcCapturerResult
+     @  163228496 E:\x\x_rel_t7\third_party\webrtc\modules\desktop_capture\win\wgc_capture_session.cc
+
+==========================================================================================
+### WeixinUpdate.exe  (2.5 MB)
+  gdi                    49
+  bitmap                 6
+  capture                2
+  U16:capture            1
+  -- U16:capture:
+     @    2293916 crash_capturer.dll
+  -- bitmap:
+     @    2380634 CreateCompatibleBitmap
+     @    2381164 GdipCreateBitmapFromScan0
+     @    2381286 GdipBitmapLockBits
+     @    2381378 GdipCreateBitmapFromStream
+     @    2381408 GdipBitmapUnlockBits
+     @    2399788 .?AVBitmap@Gdiplus@@
+  -- capture:
+     @    2383006 SetCapture
+     @    2383020 ReleaseCapture
+  -- gdi:
+     @    1969712 id-smime-aa-msgSigDigest
+     @    1981700 issuingDistributionPoint
+     @    2064368 cms_msgSigDigest_add1
+     @    2066128 msgsigdigest error
+     @    2066148 msgsigdigest verification failure
+     @    2066184 msgsigdigest wrong length
+
+==========================================================================================
+### WetypeInstaller.exe  (2.7 MB)
+  gdi                    46
+  bitmap                 7
+  capture                3
+  -- bitmap:
+     @    2366570 CreateCompatibleBitmap
+     @    2367752 GdipCreateBitmapFromScan0
+     @    2367874 GdipBitmapLockBits
+     @    2367966 GdipCreateBitmapFromStream
+     @    2367996 GdipBitmapUnlockBits
+     @    2368280 GdipBitmapSetPixel
+  -- capture:
+     @    2109200 RtlCaptureStackBackTrace
+     @    2365938 SetCapture
+     @    2365952 ReleaseCapture
+  -- gdi:
+     @    2032948 pengdings
+     @    2367186 GDI32.dll
+     @    2367734 GdipDrawImageI
+     @    2367752 GdipCreateBitmapFromScan0
+     @    2367780 GdipGetImageWidth
+     @    2367800 GdipGetImagePalette
+
+==========================================================================================
+### XEditor.bin  (23.4 MB)
+  gdi                    48
+  clipboard              45
+  capture                36
+  bitmap                 21
+  U16:gdi                6
+  wgc                    2
+  snip                   1
+  U16:capture            1
+  U16:clipboard          1
+  -- U16:capture:
+     @   12656226 gl_capture_window_
+  -- U16:clipboard:
+     @   16839703 There are icons for PC, monitor, keyboard, mouse, trackball, hard drive, diskette, tape cassette, printer, fax, etc., as well as icons for file folder
+  -- U16:gdi:
+     @   12087292 wingdings
+     @   12100978 wingding.ttf
+     @   16838239  2006 Microsoft Corporation. All Rights Reserved.WingdingsRegularWingdings Regular: MS: 2006Version 5.01Wingdings-RegularWingdings is either a registe
+     @   16838959 The fonts were originally named Lucida Icons, Arrows, and Stars to complement the Lucida text font family by the same designers. Renamed, reorganized,
+     @   16839703 There are icons for PC, monitor, keyboard, mouse, trackball, hard drive, diskette, tape cassette, printer, fax, etc., as well as icons for file folder
+     @   16840905 Pointing and indicating are frequent functions in graphical interfaces, so in addition to a wide selection of pointing hands, the Wingdings fonts also
+  -- bitmap:
+     @   11963707 SkBitmap::tryAllocPixels failed ColorType:%d AlphaType:%d [w:%d h:%d] rb:%zu
+     @   11963784 ..\..\third_party\skia\src\core\SkBitmap.cpp
+     @   11963924 bitmap
+     @   11964298 ..\..\third_party\skia\src\core\SkBitmapDevice.cpp
+     @   12009154 bitmap-shader
+     @   12035415 RasterBitmapTexture
+  -- capture:
+     @   12030493 RtlCaptureStackBackTrace
+     @   12294494 U_REGEX_INVALID_CAPTURE_GROUP_NAME
+     @   12655204 [VERIFY] single-instance capture mode
+     @   12656264 GLCapture-
+     @   12656275 GPU capture Window-%zu: black_screen=%s
+     @   12656315 GPU capture Window-%zu vs TileView: similarity=%.8f
+  -- clipboard:
+     @   12071528 ClipboardHasXEditRichEditFormat: %s
+     @   12071564 ClipboardHasWeChatRichEditFormat:%s
+     @   12071640 event=clipboard.format.select format=text reason=wechat_markdown_fragments_match
+     @   12071830 ClipboardHasListFilesFormat: %s
+     @   12072066 ClipboardHasImageFormat: %s
+     @   12072319 ClipboardHasTextFormat: %s
+  -- gdi:
+     @   12100576 wingdings
+     @   12140179 Wingdings
+     @   12523824 Old_Sogdian
+     @   12523836 Old_Sogdian
+     @   12523849 Sogdian
+     @   12523857 Sogdian
+  -- snip:
+     @   12038252 UnknownCodeSnippetID:
+  -- wgc:
+     @   15629532 0VwGCvX3
+     @   15906821 0WwGCuX3
+
+==========================================================================================
+### XNet.dll  (7.0 MB)
+  capture                16
+  dxgi                   1
+  -- capture:
+     @    6207648 RtlCaptureContext
+     @    6794576 ?BeginFrameCapture@RciComputeDevice@rci@xnet@@UEAAIPEBD@Z
+     @    6814670 ?DiscardFrameCapture@RenderDocModule@urdoc@xnet@@SAIPEAX0@Z
+     @    6814979 ?EndFrameCapture@RciComputeDevice@rci@xnet@@UEAAXXZ
+     @    6815031 ?EndFrameCapture@RenderDocModule@urdoc@xnet@@SAIPEAX0@Z
+     @    6819904 ?GetCapture@RenderDocModule@urdoc@xnet@@SAIIPEADPEAIPEA_K@Z
+  -- dxgi:
+     @    5686464 [DDS] Unknown DXGI format: 
+
+==========================================================================================
+### XPlayer.bin  (63.4 MB)
+  capture                202
+  dxgi                   66
+  gdi                    28
+  bitmap                 27
+  U16:gdi                12
+  screenshot             8
+  clipboard              2
+  snip                   1
+  U16:dxgi               1
+  -- U16:dxgi:
+     @   29137149  dxgi.dll
+  -- U16:gdi:
+     @   13602380 migdia
+     @   17204988 Old Sogdian
+     @   17230258 vanasogdi
+     @   17248842 muinaissogdialainen
+     @   17306642 Sogdian
+     @   17307412 Sogdian Lama
+  -- bitmap:
+     @    9572406 PBM (Portable BitMap) image
+     @    9572809 BMP (Windows and OS/2 bitmap)
+     @    9575045 Bitmap Brothers JV video
+     @    9575390 XBM (X BitMap) image
+     @    9575411 image/x-xbitmap
+     @    9578361 WBMP (Wireless Application Protocol Bitmap) image
+  -- capture:
+     @    4155424 By default, unbounded size descriptor tables are disabled to support frame captures in graphics tools. Use of unbounded (or large) size descriptor tab
+     @    4489108 RtlCaptureContext
+     @    9572191 TechSmith Screen Capture Codec
+     @    9576302 innoHeim/Rsupport Screen Capture Codec
+     @    9577176 FM Screen Capture Codec
+     @    9577377 Mandsoft Screen Capture Codec
+  -- clipboard:
+     @   63176241 clipboardchange
+     @   63322599 TASK_TYPE_CLIPBOARD
+  -- dxgi:
+     @   29033252 @Renderer11::initialize (DXGICheck)
+     @   29033288 DXGI 1.2 required to present to HWNDs owned by another process.
+     @   29033388 Could not read DXGI adaptor description.
+     @   29033444 iCould not create DXGI factory.
+     @   29033629 Could not create DXGI factory
+     @   29033659 Could not retrieve DXGI adapter
+  -- gdi:
+     @    9837960 GPSImgDirectionRef
+     @    9837994 GPSImgDirection
+     @   18049709 minimumGroupingDigits
+     @   28431262 glVertexBindingDivisor
+     @   28654157 VUID-VkVertexInputBindingDivisorDescriptionKHR-divisor-01870
+     @   29105949 glVertexArrayBindingDivisor
+  -- screenshot:
+     @   40284621 disabled-by-default-devtools.screenshot
+     @   63301077 2protos/perfetto/trace/track_event/screenshot.proto
+     @   63301149 Screenshot
+     @   63302356 2protos/perfetto/trace/track_event/screenshot.proto
+     @   63304586 screenshot
+     @   63304604 .perfetto.protos.ScreenshotR
+  -- snip:
+     @   63718737 UnknownCodeSnippetID:
+
+==========================================================================================
+### crashpad_handler.exe  (2.1 MB)
+  capture                5
+  clipboard              5
+  gdi                    1
+  -- capture:
+     @    1467306 RtlCaptureStackBackTrace
+     @    1498169 Crashpad.ExceptionCaptureResult
+     @    1518663 ..\..\wxcrashpad\snapshot\capture_memory.cc
+     @    1547846 RtlCaptureContext
+     @    1547866 RtlCaptureStackBackTrace
+  -- clipboard:
+     @    1539246 CloseClipboard
+     @    1539412 EmptyClipboard
+     @    1539842 OpenClipboard
+     @    1539946 RegisterClipboardFormatW
+     @    1540012 SetClipboardData
+  -- gdi:
+     @    1540841 GDI32.dll
+
+==========================================================================================
+### ilink2.dll  (10.6 MB)
+  bitmap                 37
+  gdi                    7
+  capture                2
+  -- bitmap:
+     @    8379504 C:\Users\Administrator\.wconan2\marsnetwork_bridge\5ffd092b_2429\mars-private\mars\cdn\src\misc/file_bitmap.h
+     @    8480424 FileBitmap::SetRange
+     @    8480680 bitmap_.size() >= bitmap_end
+     @    8480744 RangeSupplier::update_from_bitmap
+     @    8481744 invalid bitmap count %_
+     @    8482184 resume upload. curbitmap:%_, totalbitmap:%_, packetsize:%_
+  -- capture:
+     @   10391194 RtlCaptureContext
+     @   10607272 .?AV_Node_capture@std@@
+  -- gdi:
+     @    8777768 id-smime-aa-msgSigDigest
+     @    8791184 issuingDistributionPoint
+     @    8939608 cms_msgSigDigest_add1
+     @    8941504 msgsigdigest error
+     @    8941528 msgsigdigest verification failure
+     @    8941568 msgsigdigest wrong length
+
+==========================================================================================
+### ilink_stream.dll  (1.3 MB)
+  capture                1
+  -- capture:
+     @    1071478 RtlCaptureContext
+
+==========================================================================================
+### libGLESv2.dll  (5.1 MB)
+  capture                19
+  dxgi                   11
+  gdi                    3
+  -- capture:
+     @    4621016 enableCaptureLimits
+     @    4666400 enableProgramBinaryForCapture
+     @    4683680 FrameCapture is enabled
+     @    4684496 FrameCapture limits were forced
+     @    4760272 ' is not an array to be captured by element.
+     @    4780680 Capture of arrays is undefined and not supported.
+  -- dxgi:
+     @    4600992 Could not create DXGI factory
+     @    4630528 Could not retrieve DXGI adapter
+     @    4630560 rx::Renderer11::initializeDXGIAdapter
+     @    4757320 GPU.ANGLE.SupportsDXGI1_2
+     @    4758064 Could not create DXGI factory.
+     @    4764952 Error querying driver version from DXGI Adapter.
+  -- gdi:
+     @    4629328 glVertexBindingDivisor
+     @    4948684 GL_VertexBindingDivisor
+     @    4966851 glVertexBindingDivisor
+
+==========================================================================================
+### mmcronet.dll  (7.6 MB)
+  capture                10
+  gdi                    7
+  screenshot             1
+  -- capture:
+     @    6586282 RtlCaptureStackBackTrace
+     @    6644626 content_capture
+     @    6644896 gpu.capture
+     @    6648971 disabled-by-default-video_and_image_capture
+     @    6676604 logCaptureMode
+     @    6676674 CaptureModeToString
+  -- gdi:
+     @    7300688 profileservicedefaulthimselfdetailscontentsupportstartedmessagesuccessfashion<title>countryaccountcreatedstoriesresultsrunningprocesswritingobjectsvis
+     @    7301731 wrapperalreadycertainrealitystorageanotherdesktopofferedpatternunusualDigitalcapitalWebsitefailureconnectreducedAndroiddecadesregular &amp; animalsrel
+     @    7305602 online.?xml vehelpingdiamonduse theairlineend -->).attr(readershosting#ffffffrealizeVincentsignals src="/ProductdespitediversetellingPublic held inJos
+     @    7317624 electricscotlandcreationquantity. ISBN 0did not instance-search-" lang="speakersComputercontainsarchivesministerreactiondiscountItalianocriteriastrong
+     @    7339465 <div id Official worldwide.aria-labelthe planetand it wasd" value="looking atbeneficialare in themonitoringreportedlythe modernworking onallowed towhe
+     @    7346447 <div id="incorporate;</script><attachEventbecame the " target="_carried outSome of thescience andthe time ofContainer">maintainingChristopherMuch of t
+  -- screenshot:
+     @    6646840 disabled-by-default-devtools.screenshot
+
+==========================================================================================
+### mmmojo_64.dll  (2.4 MB)
+  capture                6
+  gdi                    2
+  screenshot             1
+  U16:gdi                1
+  -- U16:gdi:
+     @    2248464 gdi32.dll
+  -- capture:
+     @    2183202 RtlCaptureStackBackTrace
+     @    2208448 content_capture
+     @    2208706 gpu.capture
+     @    2212501 disabled-by-default-video_and_image_capture
+     @    2265660 RtlCaptureContext
+     @    2265680 RtlCaptureStackBackTrace
+  -- gdi:
+     @    2244085 GdiDllInitialize
+     @    2267578 RegDisablePredefinedCache
+  -- screenshot:
+     @    2210469 disabled-by-default-devtools.screenshot
+
+==========================================================================================
+### owl.dll  (1.5 MB)
+  capture                1
+  -- capture:
+     @    1451786 RtlCaptureContext
+
+==========================================================================================
+### roam_migration.dll  (6.1 MB)
+  gdi                    32
+  snip                   2
+  capture                2
+  -- capture:
+     @    5936668 RtlCaptureContext
+     @    6119048 .?AV_Node_capture@std@@
+  -- gdi:
+     @    4878336 id-smime-aa-msgSigDigest
+     @    4891944 issuingDistributionPoint
+     @    5085656 cms_msgSigDigest_add1
+     @    5087552 msgsigdigest error
+     @    5087576 msgsigdigest verification failure
+     @    5087616 msgsigdigest wrong length
+  -- snip:
+     @    5247376 snippet
+     @    5380568 wrong number of arguments to function snippet()
+
+==========================================================================================
+### roam_server.dll  (14.2 MB)
+  bitmap                 37
+  gdi                    32
+  snip                   2
+  capture                2
+  grab                   1
+  -- bitmap:
+     @   11889792 C:\Users\Administrator\.wconan2\marsnetwork_bridge\b094db63_3020\mars-private\mars\cdn\src\misc/file_bitmap.h
+     @   11981560 FileBitmap::SetRange
+     @   11981816 bitmap_.size() >= bitmap_end
+     @   11981880 RangeSupplier::update_from_bitmap
+     @   11982880 invalid bitmap count %_
+     @   11983320 resume upload. curbitmap:%_, totalbitmap:%_, packetsize:%_
+  -- capture:
+     @   13908856 RtlCaptureContext
+     @   14172424 .?AV_Node_capture@std@@
+  -- gdi:
+     @   12350240 id-smime-aa-msgSigDigest
+     @   12363224 issuingDistributionPoint
+     @   12554120 cms_msgSigDigest_add1
+     @   12556016 msgsigdigest error
+     @   12556040 msgsigdigest verification failure
+     @   12556080 msgsigdigest wrong length
+  -- grab:
+     @   11662594 And the mome raths outgrabe.
+  -- snip:
+     @   11761672 snippet
+     @   12688664 wrong number of arguments to function snippet()
+
+==========================================================================================
+### shared_andromeda.dll  (6.2 MB)
+  gdi                    9
+  capture                4
+  bitmap                 2
+  -- bitmap:
+     @    4280480 image/x-xbitmap
+     @    4284368 image/x-portable-bitmap
+  -- capture:
+     @    5091795 wrapperalreadycertainrealitystorageanotherdesktopofferedpatternunusualDigitalcapitalWebsitefailureconnectreducedAndroiddecadesregular &amp; animalsrel
+     @    5147900 was based onand became a&nbsp;&nbsp;t" value="" was capturedno more thanrespectivelycontinue to >
+     @    6153630 RtlCaptureStackBackTrace
+     @    6157986 RtlCaptureContext
+  -- gdi:
+     @    4966752 id-smime-aa-msgSigDigest
+     @    4979928 issuingDistributionPoint
+     @    5090752 profileservicedefaulthimselfdetailscontentsupportstartedmessagesuccessfashion<title>countryaccountcreatedstoriesresultsrunningprocesswritingobjectsvis
+     @    5091795 wrapperalreadycertainrealitystorageanotherdesktopofferedpatternunusualDigitalcapitalWebsitefailureconnectreducedAndroiddecadesregular &amp; animalsrel
+     @    5095666 online.?xml vehelpingdiamonduse theairlineend -->).attr(readershosting#ffffffrealizeVincentsignals src="/ProductdespitediversetellingPublic held inJos
+     @    5107688 electricscotlandcreationquantity. ISBN 0did not instance-search-" lang="speakersComputercontainsarchivesministerreactiondiscountItalianocriteriastrong
+
+==========================================================================================
+### wcprobe.dll  (7.6 MB)
+  capture                2
+  wgc                    1
+  gdi                    1
+  -- capture:
+     @    2726800 .?AVCEtwVolumnCaptureControl@@
+     @    2726952 .?AVIEtwVolumnCaptureNotify@@
+  -- gdi:
+     @    6270623 FGDI32.dll
+  -- wgc:
+     @    6223905 !mFWGc
+
+==========================================================================================
+### wxpublic.dll  (1.0 MB)
+  capture                3
+  -- capture:
+     @     896982 RtlCaptureStackBackTrace
+     @     927220 RtlCaptureContext
+     @     927240 RtlCaptureStackBackTrace
+
+==========================================================================================
+扫描完成: 23 个文件, 耗时 77.6s, 错误 0 个

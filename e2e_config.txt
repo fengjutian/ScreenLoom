@@ -1,0 +1,8 @@
+# 端到端验证用配置：关闭 hide_self，方便把浮窗本身抓进截图
+hotkey = Alt+A
+hide_self = false
+toolbar_collapsed = false
+copy_format = both
+long_screenshot_max = 0
+long_screenshot_search = 240
+default_dir =

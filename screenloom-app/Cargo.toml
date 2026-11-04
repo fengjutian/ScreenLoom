@@ -1,0 +1,48 @@
+[package]
+name = "screenloom-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "screenloom 可执行程序：热键、编排、剪贴板、落盘"
+
+[[bin]]
+name = "screenloom"
+path = "src/main.rs"
+
+[features]
+default = ["full"]
+# 接入 screenloom-capture / screenloom-ui 的完整抓屏流程（默认开启）
+full = []
+
+[dependencies]
+screenloom-core = { path = "../screenloom-core" }
+screenloom-capture = { path = "../screenloom-capture" }
+screenloom-ui = { path = "../screenloom-ui" }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+windows = { workspace = true, features = [
+    "Foundation",
+    "Graphics_Imaging",
+    "Media_Ocr",
+    "Networking",
+    "Storage",
+    "Storage_Streams",
+    "Win32_Storage_Xps",
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Networking_WinHttp",
+    "Win32_System_Com",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_SystemInformation",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+] }

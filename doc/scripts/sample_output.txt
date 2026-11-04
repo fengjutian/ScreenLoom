@@ -1,0 +1,106 @@
+﻿目标: D:\TencentWeixin\Weixin\4.1.15.13\Weixin.dll  (192.2 MB)
+
+============================================================================================
+[1] PE 结构
+  machine=0x8664 PE32+=True size=192.2MB
+  sections: .text(120108KB), .rdata(60337KB), .data(9512KB), .pdata(5906KB), .gxfg(15KB), .qtmetad(0KB), .qtmimed(328KB), .tls(6KB), _RDATA(0KB), malloc_h(0KB), .rsrc(111KB), .reloc(941KB)
+  导出表: dllname=Weixin.dll 共 117 个
+    截图相关命中 0 个
+    含 'pin' 的导出 1 个（多为误报，如 *Pinning*）
+      - ?SetEnablePublicKeyPinningBypassForLocalTrustAnchors@EngineParams@mmcronet@@QEAAAEAV12@_N@Z
+  RTTI .?AVWxShot@                命中 0
+  RTTI .?AVScreenShoter@          命中 0
+  RTTI .?AVShotSelection@         命中 0
+  RTTI screenloom@@                   命中 0
+  PDB 残留: E:\x\x_rel_t7\out\build\RelWithDebInfo\Weixin.dll.pdb
+============================================================================================
+[2] screenloom 反射成员表（类结构 + 功能）
+  @  185899229 wx::graphics::window_filter_t.status.showRegion........................................................................................................................................................t.......................i.......mmui::ScreenshotView.ScreenshotWillStart..ScreenshotDidFinish.etype.signalUpdate.Captured.......................................................................................................x.......................h.......................c....
+  @  185899976 wx::OpenCVWorker.show_broken_toast..is_show.splice_init_pixmap.pixmap.splice_pixmap.offset.splice_id.update_pixmap.worker_stop.doWork.handle_works.Stop.SetScreen.QScreen*.screen...................8.......................3.......................'.......................................................................................................................................................................................................................................
+  @  185900472 wx::GrabWorker.worker_stop..doWork.SetTarget.target.SetScreen.QScreen*.screen.SetExcludeHwnds.QVector<HWND>.exclude_hwnds.Stop..............................................................................................................................................................................................................................................................................wx::SpliceWorker.update_preview..pixmap.handle_init_pixmap.handle_splice_pim
+  @  185900872 wx::SpliceWorker.update_preview..pixmap.handle_init_pixmap.handle_splice_pimxap.offset.splice_id.SetScreen.QScreen*.screen..........................wx::LongScreenShoter................................wx::CombinedToolButton..................................................................................................................#...........~...............................................w.......................e.......................R.......................
+  @  185901024 wx::LongScreenShoter................................wx::CombinedToolButton..................................................................................................................#...........~...............................................w.......................e.......................R.......................?.......................,...............................................................................................................................
+  @  185901080 wx::CombinedToolButton..................................................................................................................#...........~...............................................w.......................e.......................R.......................?.......................,.......................................................................................................................................................................................
+  @  185902056 wx::WxShotEditormenu.smile_show..emoticonSelected.std::shared_ptr<mmui::EmoticonWrap>.wrap.share.save.copy.exit.undo.pin.ask_ai.ask_ai_with_prompt.prompt.qrcode.qrcode_leave.convert.long_screenshot.translate_enter.translate_leave.aimosaic_enter.aimosaic_leave.crop_enter.crop_leave.widthChanged.idClicked.id.shape_fold_clicked.line_fold_clicked.graphChanged.canvas::graphics_t.penChanged.fontChanged.fillChanged.canUndo.val.paintGraph.graph....................................
+  @  185902704 wx::WxShotEditorSubmenu.penChanged..fontChanged.fillChanged.moved.aimosaic_enter.aimosaic_leave................. ...................................................................................v.......................j......................._.......wx::WxShotLongScreenshotmenu.signal_edit..signal_save.signal_close.signal_copy..............................mmui::ScreenShotPinWindow.......................x.......................u.......................e...............
+  @  185902960 wx::WxShotLongScreenshotmenu.signal_edit..signal_save.signal_close.signal_copy..............................mmui::ScreenShotPinWindow.......................x.......................u.......................e.......................N.......................Q.......................B.......................0...............................................................................................................................................................................
+  @  185904760 wx::ScreenShoter.pinData..std::shared_ptr<QMimeData>.Captured.etype.closed.start.exit.share.pin.ask_ai.ask_ai_with_prompt.prompt.save.copy.qrcode.handle_qr_code_result.convert.long_screenshot.translate_enter.translate_leave.aimosaic_enter.aimosaic_leave.snip.std::pair<QPixmap,QPoint>.moveMenu.updateCursor.ShotplaceLocation.refresh.createItem.pos.finishItem.ShimmerStart.ShimmerReset.ShimmerFadeOut.UpdateShimmerExclusions.UpdateDPI.UpdateGeometry.VirtualGeometry.smile_show.
+  @  185905992 wx::WxShot.signalPixmap..path.exec.trigger.QWidget*.window.from.session_id.clear............................wx::CoverAnimationWidget............................x.......................w.......................l.......................U.......................F.......wx::AiMosaicButton.signalSelect..SizeType.type...................... .......................................................................................................................................
+  @  185906104 wx::CoverAnimationWidget............................x.......................w.......................l.......................U.......................F.......wx::AiMosaicButton.signalSelect..SizeType.type...................... .......................................................................................................................................................................................................................................................
+  @  185906264 wx::AiMosaicButton.signalSelect..SizeType.type...................... ...............................................................................................................................................................................................................................................................................wx::ButtonGroup.buttonClicked..mmui::XButton*.button.buttonToggled.checked.idClicked.id.idToggled.emptied.clear.....................
+  @  185906608 wx::ButtonGroup.buttonClicked..mmui::XButton*.button.buttonToggled.checked.idClicked.id.idToggled.emptied.clear.............................`.......................[.......................U.......................>.......wx::ColorPanel.signalColorSelect..color.....................x.......................s.......................h.......................Q.......................B.......wx::FontSelect.signalSelect..SizeType.type..........................x...............
+  @  185906832 wx::ColorPanel.signalColorSelect..color.....................x.......................s.......................h.......................Q.......................B.......wx::FontSelect.signalSelect..SizeType.type..........................x.......................s.......................h.......................Q.......................B.......wx::SizeSelect.signalSelect..SizeType.type..............(...........H.......................Y.......................K.......mmui::se
+  @  185907000 wx::FontSelect.signalSelect..SizeType.type..........................x.......................s.......................h.......................Q.......................B.......wx::SizeSelect.signalSelect..SizeType.type..............(...........H.......................Y.......................K.......mmui::search_report_util::SearchReporter.OnTimeout..............................mmui::SenderFilterPanel.................x.......................y.......................p.......
+  @  185907176 wx::SizeSelect.signalSelect..SizeType.type..............(...........H.......................Y.......................K.......mmui::search_report_util::SearchReporter.OnTimeout..............................mmui::SenderFilterPanel.................x.......................y.......................p.......................Y.......................M.......mmui::ContactSearchPanel.MemberSelected..std::string.username...................................................................
+============================================================================================
+[3] 截图相关配置键 / 日志前缀
+  @  149637744 gScreenshotShortcutKey
+  @  149637920 gScreenShotHideWindow
+  @  149676264 clicfg_screen_privacy
+  @  149676288 gScreenPrivacyEnabled
+  @  149676392 clicfg_pc_fourth_screen_show_enabled_x_key_v2
+  @  152265480 clicfg_yuanbao_screenshot_agreement_version
+  @  152265696 clicfg_yuanbao_screenshot_agreement_content
+  @  152265952 clicfg_screenshot_ask_ai_type
+  @  152985672 clicfg_xwechat_extension_autofit_screen_x_key
+  @  157192760 clicfg_pc_screenshot_toolbar_collapse
+  @  160292560 clicfg_screen_privacy_reddot
+  @  152716320 wechat_longscreenshot
+  @  152716352 wechat_longscreenshot_
+  @  152723208 ScreenShot_
+  @  152723072 screenshot_use_getwindowrect
+  @  152723168 screenshot_qrcode
+  @  152716160 longscreenshot_use_grabwindow
+  @  152716192 longscreenshoter_opencvworker_thread
+  @  152716232 longscreenshoter_grab_thread
+  @  152716264 longscreenshoter_splice_thread
+============================================================================================
+[4] 中文 UI 文案（截图编辑器 / 设置项）
+  -- 截图编辑器工具栏 @185060400
+     字、翻译等
+     用 AI 处理
+     提取文字
+     更多
+     打马赛克
+     消除杂物
+     翻译
+     设备环境不允许当前应用截图，可联系网管或IT人员确认。
+     色值
+     裁剪
+     图片编辑
+     退出
+     按 Ctrl+C 复制色值
+     按 ⌘+C 复制色值
+     图片过大，暂不支持编辑
+     滚动截图
+     截图中断，返回中断位置继续滚动
+     已达最大长度，无法继续截图
+     滚动页面截取更多内容
+     坐标
+     矩形
+     还原
+     收藏
+     一键打码
+     箭头
+     问 AI
+     问 AI｜由元宝提供
+     完成
+     编辑
+     椭圆
+     表情
+     转发
+     马赛克
+     画笔
+     置顶在桌面
+     二
+  -- 截图设置项 @185054540
+     板
+     已复制色值
+     隐藏窗口截图
+     设置
+     点击截图按钮时保留当前窗口
+     默认
+     保留窗口截图
+     搜索
+     搜索公众号和文章
+     查找聊天内�

@@ -1,0 +1,20 @@
+[package]
+name = "screenloom-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "screenloom 渲染与交互层：分层浮窗 / 选区 / 编辑器 / 工具栏 / 贴图窗"
+
+[dependencies]
+screenloom-core = { path = "../screenloom-core" }
+windows = { workspace = true, features = [
+    "Foundation",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_GdiPlus",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
