@@ -62,7 +62,7 @@ D:\github\screenloom\
 cd D:\github\screenloom
 
 # 改 app 层代码时必须先杀掉在跑的进程，否则 exe 被占用 → os error 5
-Get-Process -Name screenloom-app -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name screenloom -ErrorAction SilentlyContinue | Stop-Process -Force
 
 cargo build --release -p screenloom-app --bins --examples
 ```
@@ -76,7 +76,7 @@ cargo build --release -p screenloom-app --bins --examples
 | `cargo test --workspace` | 全量单测 |
 | `cargo build --workspace` | 全 workspace |
 
-当前状态：`cargo test --workspace` **78 个测试全绿**（app 43 / core 22 / ui 13），release **零警告**。
+当前状态：`cargo test --workspace` **90 个测试全绿**（app 49 / core 24 / ui 17），release **零警告**。
 
 ---
 
@@ -217,7 +217,7 @@ cd D:\github\screenloom
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_all.ps1
 
 # 1) 编译
-Get-Process -Name screenloom-app -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name screenloom -ErrorAction SilentlyContinue | Stop-Process -Force
 cargo build --release -p screenloom-app --bins --examples
 
 # 2) 测试

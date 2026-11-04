@@ -17,5 +17,7 @@ windows = { version = "0.61", features = [
     "Media_Playback",
     "Media_Streaming",
     "Media_Transcoding",
+    "Win32_Media",
+    "Win32_Media_MediaFoundation",
     "Win32_System_Com",
 ] }
