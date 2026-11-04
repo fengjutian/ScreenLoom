@@ -48,6 +48,8 @@ pub(crate) enum Field {
     Bitrate,
     Countdown,
     RecordDir,
+    MaxSeconds,
+    MaxMb,
     Monitor,
     Cursor,
     Hud,
@@ -75,6 +77,8 @@ impl Field {
         Field::Bitrate,
         Field::Countdown,
         Field::RecordDir,
+        Field::MaxSeconds,
+        Field::MaxMb,
         Field::Monitor,
         Field::Cursor,
         Field::Hud,
@@ -131,8 +135,14 @@ pub(crate) type ChoiceSet = fn(&mut Config, usize);
 
 /// 一个字段的读写方式。
 pub(crate) enum Access {
-    Text { get: TextGet, set: TextSet },
-    Bool { get: BoolGet, set: BoolSet },
+    Text {
+        get: TextGet,
+        set: TextSet,
+    },
+    Bool {
+        get: BoolGet,
+        set: BoolSet,
+    },
     Choice {
         items: Vec<String>,
         get: ChoiceGet,
@@ -200,10 +210,7 @@ impl Form {
 
     /// Tab 焦点顺序：控件按界面顺序 → 行尾按钮 → 保存 → 取消。
     pub(crate) fn focus_items(&self) -> Vec<FocusItem> {
-        let mut v: Vec<FocusItem> = self
-            .widgets()
-            .map(|w| FocusItem::Field(w.field))
-            .collect();
+        let mut v: Vec<FocusItem> = self.widgets().map(|w| FocusItem::Field(w.field)).collect();
         for s in &self.sections {
             for r in &s.rows {
                 if let Some(t) = &r.trailing {
@@ -244,12 +251,7 @@ fn password(field: Field, get: TextGet, set: TextSet) -> Widget {
     }
 }
 
-fn check(
-    field: Field,
-    label: &'static str,
-    get: BoolGet,
-    set: BoolSet,
-) -> Widget {
+fn check(field: Field, label: &'static str, get: BoolGet, set: BoolSet) -> Widget {
     Widget {
         field,
         kind: Kind::Check,
@@ -258,12 +260,7 @@ fn check(
     }
 }
 
-fn choice(
-    field: Field,
-    items: Vec<String>,
-    get: ChoiceGet,
-    set: ChoiceSet,
-) -> Widget {
+fn choice(field: Field, items: Vec<String>, get: ChoiceGet, set: ChoiceSet) -> Widget {
     Widget {
         field,
         kind: Kind::Combo,
@@ -297,7 +294,10 @@ pub(crate) fn capture_form(_cfg: &Config) -> Form {
             title: "常规",
             note: "截图行为",
             rows: vec![
-                row("截图热键", vec![text(Field::Hotkey, get_hotkey, set_hotkey)]),
+                row(
+                    "截图热键",
+                    vec![text(Field::Hotkey, get_hotkey, set_hotkey)],
+                ),
                 row(
                     "",
                     vec![
@@ -403,7 +403,10 @@ pub(crate) fn record_form(_cfg: &Config, monitors: &[MonitorInfo]) -> Form {
             title: "录制",
             note: "H.264 / MP4",
             rows: vec![
-                row("录制帧率（1–120）", vec![text(Field::Fps, get_fps, set_fps)]),
+                row(
+                    "录制帧率（1–120）",
+                    vec![text(Field::Fps, get_fps, set_fps)],
+                ),
                 row(
                     "码率（Mbps）",
                     vec![text(Field::Bitrate, get_bitrate, set_bitrate)],
@@ -411,6 +414,14 @@ pub(crate) fn record_form(_cfg: &Config, monitors: &[MonitorInfo]) -> Form {
                 row(
                     "开始前倒计时（秒）",
                     vec![text(Field::Countdown, get_countdown, set_countdown)],
+                ),
+                row(
+                    "最长录制（秒，0 = 不限）",
+                    vec![text(Field::MaxSeconds, get_max_seconds, set_max_seconds)],
+                ),
+                row(
+                    "最大文件（MB，0 = 不限）",
+                    vec![text(Field::MaxMb, get_max_mb, set_max_mb)],
                 ),
                 row(
                     "录制显示器",
@@ -620,9 +631,7 @@ fn get_ai_timeout(c: &Config) -> String {
 fn set_ai_timeout(c: &mut Config, s: &str) -> std::result::Result<(), String> {
     let v = parse_u32("「AI 请求超时」", s)?;
     if v == 0 || v > AI_TIMEOUT_MAX {
-        return Err(format!(
-            "「AI 请求超时」必须在 1 ~ {AI_TIMEOUT_MAX} 秒之间"
-        ));
+        return Err(format!("「AI 请求超时」必须在 1 ~ {AI_TIMEOUT_MAX} 秒之间"));
     }
     c.ai_timeout = v;
     Ok(())
@@ -669,6 +678,24 @@ fn set_countdown(c: &mut Config, s: &str) -> std::result::Result<(), String> {
         return Err("「倒计时」不能超过 10 秒".to_string());
     }
     c.record_countdown = v;
+    Ok(())
+}
+
+fn get_max_seconds(c: &Config) -> String {
+    c.record_max_seconds.to_string()
+}
+
+fn set_max_seconds(c: &mut Config, s: &str) -> std::result::Result<(), String> {
+    c.record_max_seconds = parse_u32("「最长录制」", s)?;
+    Ok(())
+}
+
+fn get_max_mb(c: &Config) -> String {
+    c.record_max_mb.to_string()
+}
+
+fn set_max_mb(c: &mut Config, s: &str) -> std::result::Result<(), String> {
+    c.record_max_mb = parse_u32("「最大文件」", s)?;
     Ok(())
 }
 

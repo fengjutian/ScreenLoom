@@ -187,7 +187,7 @@ fn open_form(
             WS_EX_DLGMODALFRAME,
             PCWSTR(class.as_ptr()),
             PCWSTR(title.as_ptr()),
-            WS_OVERLAPPEDWINDOW,
+            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             ww,
@@ -289,7 +289,8 @@ fn frame_adjusted(cw: i32, ch: i32, dpi: u32) -> (i32, i32) {
         bottom: ch,
     };
     unsafe {
-        let _ = AdjustWindowRectExForDpi(&mut r, WS_OVERLAPPEDWINDOW, false, WS_EX_DLGMODALFRAME, dpi);
+        let _ =
+            AdjustWindowRectExForDpi(&mut r, WS_OVERLAPPEDWINDOW, false, WS_EX_DLGMODALFRAME, dpi);
     }
     (r.right - r.left, r.bottom - r.top)
 }
@@ -324,7 +325,7 @@ fn register_class(kind: FormKind) -> Result<()> {
         lpszClassName: PCWSTR(name.as_ptr()),
         // 不给背景刷：整块客户区都由我们自己画；裁剪子控件避免滚动闪烁
         hbrBackground: HBRUSH(std::ptr::null_mut()),
-        style: WNDCLASS_STYLES(CS_HREDRAW.0 | CS_VREDRAW.0 | WS_CLIPCHILDREN.0),
+        style: WNDCLASS_STYLES(CS_HREDRAW.0 | CS_VREDRAW.0),
         ..WNDCLASSEXW::default()
     };
     if unsafe { RegisterClassExW(&wc) } == 0 {
@@ -803,7 +804,12 @@ mod tests {
     }
 
     /// 用表单自带的访问器写一个文本字段。
-    fn set_text_field(form: &Form, field: Field, cfg: &mut Config, val: &str) -> std::result::Result<(), String> {
+    fn set_text_field(
+        form: &Form,
+        field: Field,
+        cfg: &mut Config,
+        val: &str,
+    ) -> std::result::Result<(), String> {
         match &form.widget(field).expect("字段不在表单里").access {
             Access::Text { set, .. } => set(cfg, val),
             _ => panic!("不是文本字段: {field:?}"),
@@ -842,12 +848,8 @@ mod tests {
                 );
             }
         }
-        assert_eq!(
-            capture.widgets().count(),
-            13,
-            "截图表单字段数量变了"
-        );
-        assert_eq!(record.widgets().count(), 8, "录屏表单字段数量变了");
+        assert_eq!(capture.widgets().count(), 13, "截图表单字段数量变了");
+        assert_eq!(record.widgets().count(), 10, "录屏表单字段数量变了");
     }
 
     #[test]
@@ -900,9 +902,15 @@ mod tests {
     fn combo_items_match_expected_order() {
         let form = capture();
         let copy = form.choice_items(Field::CopyFormat);
-        assert_eq!(copy.iter().map(String::as_str).collect::<Vec<_>>(), COPY_FORMAT_ITEMS);
+        assert_eq!(
+            copy.iter().map(String::as_str).collect::<Vec<_>>(),
+            COPY_FORMAT_ITEMS
+        );
         let ai = form.choice_items(Field::AiProvider);
-        assert_eq!(ai.iter().map(String::as_str).collect::<Vec<_>>(), AI_PROVIDER_ITEMS);
+        assert_eq!(
+            ai.iter().map(String::as_str).collect::<Vec<_>>(),
+            AI_PROVIDER_ITEMS
+        );
     }
 
     #[test]
@@ -942,10 +950,7 @@ mod tests {
         cfg.record_show_hud = false;
         cfg.record_open_folder = false;
 
-        for form in [
-            capture_form(&cfg),
-            record_form(&cfg, &fake_monitors()),
-        ] {
+        for form in [capture_form(&cfg), record_form(&cfg, &fake_monitors())] {
             let mut out = cfg.clone();
             for w in form.widgets() {
                 match &w.access {

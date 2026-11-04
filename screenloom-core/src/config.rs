@@ -72,6 +72,10 @@ pub struct Config {
     pub record_open_folder: bool,
     /// 上次录制的显示器下标；-1 = 主显示器
     pub record_monitor: i32,
+    /// 最长录制时长（秒，0 = 不限）
+    pub record_max_seconds: u32,
+    /// 最大录制文件（MB，0 = 不限）
+    pub record_max_mb: u32,
     /// 默认保存目录，None 表示每次询问
     pub default_dir: Option<PathBuf>,
     /// AI 服务方：`minimax`（默认）/ `deepseek`
@@ -110,6 +114,8 @@ impl Default for Config {
             record_show_hud: true,
             record_open_folder: true,
             record_monitor: -1,
+            record_max_seconds: 0,
+            record_max_mb: 0,
             default_dir: None,
             ai_provider: "minimax".to_string(),
             ai_model: String::new(),
@@ -192,6 +198,12 @@ impl Config {
                 "record_monitor" => {
                     cfg.record_monitor = v.parse().unwrap_or(cfg.record_monitor)
                 }
+                "record_max_seconds" => {
+                    cfg.record_max_seconds = v.parse().unwrap_or(cfg.record_max_seconds)
+                }
+                "record_max_mb" => {
+                    cfg.record_max_mb = v.parse().unwrap_or(cfg.record_max_mb)
+                }
                 // 空值表示「不指定目录」，不能当成路径 ""（否则会存到当前工作目录）。
                 "default_dir" => {
                     cfg.default_dir = if v.is_empty() {
@@ -238,6 +250,8 @@ impl Config {
              record_show_hud = {}\n\
              record_open_folder = {}\n\
              record_monitor = {}\n\
+             record_max_seconds = {}\n\
+             record_max_mb = {}\n\
              default_dir = {}\n\
              # ---- AI 接入（key 也可走环境变量 MINIMAX_API_KEY / DEEPSEEK_API_KEY）----\n\
              ai_provider = {}\n\
@@ -271,6 +285,8 @@ impl Config {
             self.record_show_hud,
             self.record_open_folder,
             self.record_monitor,
+            self.record_max_seconds,
+            self.record_max_mb,
             self.default_dir
                 .as_ref()
                 .map(|p| p.display().to_string())

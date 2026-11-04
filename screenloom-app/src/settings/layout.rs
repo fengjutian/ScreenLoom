@@ -98,8 +98,8 @@ pub(crate) struct Layout {
 
 impl Layout {
     /// 最大滚动偏移。
-    pub(crate) fn scroll_max(&self, k: f32) -> i32 {
-        (self.content_h + px(PAD, k) - self.viewport.h).max(0)
+    pub(crate) fn scroll_max(&self, _k: f32) -> i32 {
+        (self.content_h - self.viewport.h).max(0)
     }
 
     pub(crate) fn widget_rect(&self, field: Field) -> Option<Rect> {

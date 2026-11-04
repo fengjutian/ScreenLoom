@@ -5,6 +5,7 @@
 //! 资源缺失时（构建时没找到 `rc.exe`）退化为系统应用图标。
 
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
@@ -36,6 +37,8 @@ pub enum TrayCommand {
     ExcludeWindows,
     /// 开始录屏
     RecordStart,
+    /// 录制一个窗口
+    RecordWindow,
     /// 停止录屏
     RecordStop,
     /// 暂停/继续录屏
@@ -52,11 +55,26 @@ const MENU_CAPTURE: usize = 2001;
 const MENU_SETTINGS: usize = 2002;
 const MENU_EXCLUDE: usize = 2003;
 const MENU_RECORD_START: usize = 2004;
+const MENU_RECORD_WINDOW: usize = 2010;
 const MENU_RECORD_STOP: usize = 2005;
 const MENU_RECORD_PAUSE: usize = 2006;
 const MENU_RECORD_FOLDER: usize = 2007;
 const MENU_RECORD_SETTINGS: usize = 2008;
 const MENU_EXIT: usize = 2009;
+
+/// bit0 = 录制中，bit1 = 已暂停。
+static RECORD_STATE: AtomicU8 = AtomicU8::new(0);
+
+/// 供录制控制器更新托盘菜单文案。
+pub fn set_record_state(recording: bool, paused: bool) {
+    let v = (recording as u8) | ((paused as u8) << 1);
+    RECORD_STATE.store(v, Ordering::Relaxed);
+}
+
+fn record_state() -> (bool, bool) {
+    let v = RECORD_STATE.load(Ordering::Relaxed);
+    (v & 1 != 0, v & 2 != 0)
+}
 
 /// 托盘回调消息（Shell 发给托盘窗口）。
 pub const WM_TRAY: u32 = WM_APP + 20;
@@ -234,24 +252,35 @@ unsafe fn show_menu(hwnd: HWND) {
         return;
     };
     let _ = AppendMenuW(menu, MF_STRING, MENU_CAPTURE, PCWSTR(wide("截图").as_ptr()));
-    let _ = AppendMenuW(
-        menu,
-        MF_STRING,
-        MENU_RECORD_START,
-        PCWSTR(wide("开始录屏").as_ptr()),
-    );
-    let _ = AppendMenuW(
-        menu,
-        MF_STRING,
-        MENU_RECORD_STOP,
-        PCWSTR(wide("停止录屏").as_ptr()),
-    );
-    let _ = AppendMenuW(
-        menu,
-        MF_STRING,
-        MENU_RECORD_PAUSE,
-        PCWSTR(wide("暂停/继续录屏").as_ptr()),
-    );
+    let (recording, paused) = record_state();
+    if recording {
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            MENU_RECORD_STOP,
+            PCWSTR(wide("停止录屏").as_ptr()),
+        );
+        let label = if paused { "继续录屏" } else { "暂停录屏" };
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            MENU_RECORD_PAUSE,
+            PCWSTR(wide(label).as_ptr()),
+        );
+    } else {
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            MENU_RECORD_START,
+            PCWSTR(wide("开始录屏").as_ptr()),
+        );
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            MENU_RECORD_WINDOW,
+            PCWSTR(wide("录制窗口…").as_ptr()),
+        );
+    }
     let _ = AppendMenuW(
         menu,
         MF_STRING,
@@ -301,6 +330,7 @@ unsafe fn show_menu(hwnd: HWND) {
         MENU_CAPTURE => fire(TrayCommand::Capture),
         MENU_EXCLUDE => fire(TrayCommand::ExcludeWindows),
         MENU_RECORD_START => fire(TrayCommand::RecordStart),
+        MENU_RECORD_WINDOW => fire(TrayCommand::RecordWindow),
         MENU_RECORD_STOP => fire(TrayCommand::RecordStop),
         MENU_RECORD_PAUSE => fire(TrayCommand::RecordTogglePause),
         MENU_RECORD_FOLDER => fire(TrayCommand::OpenRecordFolder),
@@ -329,6 +359,7 @@ unsafe extern "system" fn tray_wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
                 MENU_CAPTURE => fire(TrayCommand::Capture),
                 MENU_EXCLUDE => fire(TrayCommand::ExcludeWindows),
                 MENU_RECORD_START => fire(TrayCommand::RecordStart),
+                MENU_RECORD_WINDOW => fire(TrayCommand::RecordWindow),
                 MENU_RECORD_STOP => fire(TrayCommand::RecordStop),
                 MENU_RECORD_PAUSE => fire(TrayCommand::RecordTogglePause),
                 MENU_RECORD_FOLDER => fire(TrayCommand::OpenRecordFolder),

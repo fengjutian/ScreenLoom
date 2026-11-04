@@ -10,6 +10,7 @@ const MIN_THUMB_H: i32 = 24;
 const WHEEL_ROWS: i32 = 3;
 
 /// 视口滚动状态。
+#[derive(Default)]
 pub(crate) struct Scroll {
     /// 当前偏移（内容坐标，0..=max）。
     pub(crate) y: i32,
@@ -23,19 +24,6 @@ pub(crate) struct Scroll {
     pub(crate) drag: Option<i32>,
     /// 滚轮余数（高精度触控板的小 delta 累加）。
     acc: i32,
-}
-
-impl Default for Scroll {
-    fn default() -> Self {
-        Self {
-            y: 0,
-            max: 0,
-            viewport_h: 0,
-            hover: false,
-            drag: None,
-            acc: 0,
-        }
-    }
 }
 
 impl Scroll {

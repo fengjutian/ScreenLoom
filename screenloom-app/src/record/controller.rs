@@ -97,12 +97,21 @@ impl RecorderController {
     }
 
     pub fn start(&self) {
+        self.start_target(None);
+    }
+
+    /// 从托盘/热键启动，可覆盖录制目标。
+    pub fn start_target(&self, target: Option<super::RecordTarget>) {
         with_controller(self.hwnd, |c| {
-            if let Err(e) = c.start() {
+            if let Err(e) = c.start_with(target) {
                 eprintln!("录屏启动失败: {e}");
                 message_box(&format!("录屏启动失败:\n{e}"));
             }
         });
+    }
+
+    pub fn start_window(&self, hwnd: isize) {
+        self.start_target(Some(super::RecordTarget::Window(hwnd)));
     }
 
     pub fn stop(&self) {
@@ -147,10 +156,17 @@ impl Drop for RecorderController {
 
 impl Controller {
     fn start(&mut self) -> Result<()> {
+        self.start_with(None)
+    }
+
+    fn start_with(&mut self, target: Option<super::RecordTarget>) -> Result<()> {
         if self.session.is_some() {
             return Ok(());
         }
-        let opts = RecordOptions::from_config(&self.cfg)?;
+        let mut opts = RecordOptions::from_config(&self.cfg)?;
+        if let Some(t) = target {
+            opts.target = t;
+        }
         let stats = Arc::new(SharedStats::new());
         let hwnd_raw = self.hwnd.0 as isize;
         let session = RecordSession::start(&opts, Arc::clone(&stats), move |event| {
@@ -172,6 +188,7 @@ impl Controller {
         }
         self.stats = Some(stats);
         self.session = Some(session);
+        crate::tray::set_record_state(true, false);
         println!("录屏已开始（{}）", self.cfg.record_hotkey);
         Ok(())
     }
@@ -188,8 +205,10 @@ impl Controller {
         };
         if s.is_paused() {
             s.resume();
+            crate::tray::set_record_state(true, false);
         } else {
             s.pause();
+            crate::tray::set_record_state(true, true);
         }
     }
 
@@ -235,6 +254,7 @@ impl Controller {
             }
         }
         self.stats = None;
+        crate::tray::set_record_state(false, false);
         let _ = reason;
     }
 }

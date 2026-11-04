@@ -73,6 +73,14 @@ pub fn run_hotkey_loop(cfg: &Config, cfg_path: &std::path::Path) -> Result<()> {
             }
         }
         crate::tray::TrayCommand::RecordStart => recorder_for_tray.start(),
+        crate::tray::TrayCommand::RecordWindow => {
+            if let Some(picked) = crate::windowpicker::run(crate::windowpicker::PickerMode::PickTarget)
+            {
+                if let Some(w) = picked.first() {
+                    recorder_for_tray.start_window(w.hwnd.0 as isize);
+                }
+            }
+        }
         crate::tray::TrayCommand::RecordStop => recorder_for_tray.stop(),
         crate::tray::TrayCommand::RecordTogglePause => recorder_for_tray.toggle_pause(),
         crate::tray::TrayCommand::OpenRecordFolder => recorder_for_tray.open_last_folder(),

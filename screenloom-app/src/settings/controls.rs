@@ -59,7 +59,7 @@ pub(crate) fn sync_children(st: &State) {
     let mut jobs: Vec<(HWND, Rect)> = Vec::new();
     for (field, hwnd) in &st.edits {
         if let Some(r) = st.layout.widget_rect(*field) {
-            jobs.push((*hwnd, r));
+            jobs.push((*hwnd, edit_inner(r, st.k)));
         }
     }
     for row in &st.layout.rows {
@@ -104,6 +104,16 @@ pub(crate) fn sync_children(st: &State) {
     }
 }
 
+/// 输入框在自绘外框里的内缩矩形（两端留 11px 给圆角与描边）。
+pub(crate) fn edit_inner(r: Rect, k: f32) -> Rect {
+    Rect::new(
+        r.x + px(11, k),
+        r.y + px(4, k),
+        (r.w - px(22, k)).max(1),
+        (r.h - px(8, k)).max(1),
+    )
+}
+
 /// 文本输入框。
 ///
 /// 不加 `WS_BORDER` / `WS_EX_CLIENTEDGE` —— 外框由宿主自绘圆角，
@@ -116,16 +126,17 @@ pub(crate) fn create_edit(parent: HWND, r: Rect, password: bool, font: HFONT, k:
         | WS_TABSTOP.0
         | ES_AUTOHSCROLL as u32
         | if password { ES_PASSWORD as u32 } else { 0 };
+    let inner = edit_inner(r, k);
     let h = unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE(0),
             PCWSTR(class.as_ptr()),
             PCWSTR::null(),
             WINDOW_STYLE(style),
-            r.x + px(11, k),
-            r.y + px(4, k),
-            (r.w - px(22, k)).max(1),
-            (r.h - px(8, k)).max(1),
+            inner.x,
+            inner.y,
+            inner.w,
+            inner.h,
             Some(parent),
             None,
             Some(module_handle()),

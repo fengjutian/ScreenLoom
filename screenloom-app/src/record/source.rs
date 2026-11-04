@@ -9,8 +9,11 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use screenloom_capture::{CaptureBackend, CaptureTarget, GdiBackend, ScreenStream};
+use screenloom_capture::{
+    capture_virtual_screen, list_monitors, CaptureBackend, CaptureTarget, GdiBackend, ScreenStream,
+};
 use screenloom_core::{Error, Result};
+use windows::Win32::Foundation::HWND;
 
 use super::RecordTarget;
 
@@ -20,6 +23,14 @@ pub struct Frame {
     pub w: u32,
     pub h: u32,
     pub data: Vec<u8>,
+}
+
+#[derive(Clone, Copy)]
+struct Crop {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
 }
 
 enum Inner {
@@ -32,36 +43,74 @@ pub struct FrameSource {
     inner: Inner,
     w: u32,
     h: u32,
+    crop: Option<Crop>,
     /// 当前实际使用的后端（日志/错误提示用）。
     pub backend_name: &'static str,
 }
 
 impl FrameSource {
-    /// 打开帧源：先 WGC，失败自动降级 GDI。
+    /// 打开帧源：显示器/窗口优先 WGC，失败降级 GDI；虚拟屏直接走 GDI。
     pub fn open(target: RecordTarget, fps: u32, cursor: bool) -> Result<FrameSource> {
-        let capture_target = match target {
-            RecordTarget::Monitor(i) => CaptureTarget::Monitor(i),
-        };
-        match ScreenStream::start_with_cursor(capture_target, cursor) {
-            Ok(s) => {
-                let (w, h) = s.size();
-                Ok(FrameSource {
-                    inner: Inner::Wgc(s),
-                    w,
-                    h,
-                    backend_name: "WGC",
-                })
+        match target {
+            RecordTarget::Monitor(i) => open_capture(CaptureTarget::Monitor(i), fps, cursor),
+            RecordTarget::Window(hwnd) => {
+                let h = HWND(hwnd as *mut core::ffi::c_void);
+                match ScreenStream::start_with_cursor(CaptureTarget::Window(h), cursor) {
+                    Ok(s) => {
+                        let (w, h) = s.size();
+                        Ok(FrameSource {
+                            inner: Inner::Wgc(s),
+                            w,
+                            h,
+                            crop: None,
+                            backend_name: "WGC(window)",
+                        })
+                    }
+                    Err(e) => {
+                        eprintln!("WGC 窗口录制不可用（{e}），降级 GDI/PrintWindow");
+                        let gdi = GdiSource::new(GdiTarget::Window(hwnd), fps)?;
+                        let (w, h) = gdi.size();
+                        Ok(FrameSource {
+                            inner: Inner::Gdi(gdi),
+                            w,
+                            h,
+                            crop: None,
+                            backend_name: "GDI(window)",
+                        })
+                    }
+                }
             }
-            Err(wgc_err) => {
-                eprintln!("WGC 录制不可用（{wgc_err}），降级 GDI");
-                let gdi = GdiSource::new(capture_target, fps)?;
+            RecordTarget::VirtualScreen => {
+                let gdi = GdiSource::new(GdiTarget::Virtual, fps)?;
                 let (w, h) = gdi.size();
                 Ok(FrameSource {
                     inner: Inner::Gdi(gdi),
                     w,
                     h,
-                    backend_name: "GDI",
+                    crop: None,
+                    backend_name: "GDI(virtual)",
                 })
+            }
+            RecordTarget::Region(r) => {
+                let monitors = list_monitors()?;
+                let c = r.center();
+                let mon = monitors
+                    .iter()
+                    .find(|m| m.bounds.contains(c))
+                    .or_else(|| monitors.first())
+                    .ok_or_else(|| Error::Capture("未找到显示器".into()))?;
+                let mut fs = open_capture(CaptureTarget::Monitor(mon.index), fps, cursor)?;
+                let x = (r.x - mon.bounds.x).max(0) as u32;
+                let y = (r.y - mon.bounds.y).max(0) as u32;
+                let w = ((r.w.max(2) as u32) & !1).min(fs.w.saturating_sub(x));
+                let h = ((r.h.max(2) as u32) & !1).min(fs.h.saturating_sub(y));
+                if w < 2 || h < 2 {
+                    return Err(Error::Capture("录制区域无效".into()));
+                }
+                fs.crop = Some(Crop { x, y, w, h });
+                fs.w = w;
+                fs.h = h;
+                Ok(fs)
             }
         }
     }
@@ -72,14 +121,66 @@ impl FrameSource {
 
     /// 取最新帧；没有新帧返回 `None`。
     pub fn take_latest(&mut self) -> Result<Option<Frame>> {
-        match &mut self.inner {
-            Inner::Wgc(s) => Ok(s.take_latest()?.map(|f| Frame {
+        let f = match &mut self.inner {
+            Inner::Wgc(s) => s.take_latest()?.map(|f| Frame {
                 w: f.w,
                 h: f.h,
                 data: f.data,
-            })),
-            Inner::Gdi(s) => s.take_latest(),
+            }),
+            Inner::Gdi(s) => s.take_latest()?,
+        };
+        Ok(match (f, self.crop) {
+            (Some(f), Some(c)) => Some(crop_frame(f, c)),
+            (f, _) => f,
+        })
+    }
+}
+
+fn open_capture(target: CaptureTarget, fps: u32, cursor: bool) -> Result<FrameSource> {
+    match ScreenStream::start_with_cursor(target, cursor) {
+        Ok(s) => {
+            let (w, h) = s.size();
+            Ok(FrameSource {
+                inner: Inner::Wgc(s),
+                w,
+                h,
+                crop: None,
+                backend_name: "WGC",
+            })
         }
+        Err(wgc_err) => {
+            eprintln!("WGC 录制不可用（{wgc_err}），降级 GDI");
+            let monitor = match target {
+                CaptureTarget::Monitor(i) => i,
+                CaptureTarget::Window(_) => {
+                    return Err(Error::Capture("WGC 窗口录制失败，GDI 无法接管".into()))
+                }
+            };
+            let gdi = GdiSource::new(GdiTarget::Monitor(monitor), fps)?;
+            let (w, h) = gdi.size();
+            Ok(FrameSource {
+                inner: Inner::Gdi(gdi),
+                w,
+                h,
+                crop: None,
+                backend_name: "GDI",
+            })
+        }
+    }
+}
+
+fn crop_frame(f: Frame, c: Crop) -> Frame {
+    let mut data = vec![0u8; (c.w * c.h * 4) as usize];
+    for row in 0..c.h {
+        let src = (((c.y + row) * f.w + c.x) * 4) as usize;
+        let dst = (row * c.w * 4) as usize;
+        data[dst..dst + (c.w * 4) as usize]
+            .copy_from_slice(&f.data[src..src + (c.w * 4) as usize]);
+    }
+    Frame {
+        w: c.w,
+        h: c.h,
+        data,
     }
 }
 
@@ -87,6 +188,13 @@ impl FrameSource {
 ///
 /// GDI 抓 4K 全屏可能单帧就要 100~200 ms；如果同步抓，编码循环会被拖慢，
 /// 成片时长会比真实时长短。后台抓帧 + 主循环重复上一帧可以保证成片是实时 CFR。
+#[derive(Clone, Copy)]
+enum GdiTarget {
+    Monitor(usize),
+    Window(isize),
+    Virtual,
+}
+
 struct GdiSource {
     latest: Arc<Mutex<Option<Frame>>>,
     stop: Arc<AtomicBool>,
@@ -96,15 +204,9 @@ struct GdiSource {
 }
 
 impl GdiSource {
-    fn new(target: CaptureTarget, fps: u32) -> Result<GdiSource> {
-        let monitor = match target {
-            CaptureTarget::Monitor(i) => i,
-            CaptureTarget::Window(_) => {
-                return Err(Error::Capture("GDI 录制首版只支持显示器".into()))
-            }
-        };
+    fn new(target: GdiTarget, fps: u32) -> Result<GdiSource> {
         let backend = GdiBackend::new()?;
-        let first = backend.capture(CaptureTarget::Monitor(monitor))?;
+        let first = capture_gdi(&backend, target)?;
         if first.image.w == 0 || first.image.h == 0 {
             return Err(Error::Capture("GDI 抓到空图像".into()));
         }
@@ -127,7 +229,7 @@ impl GdiSource {
                 };
                 let mut next = Instant::now();
                 while !stop2.load(Ordering::Acquire) {
-                    if let Ok(frame) = backend.capture(CaptureTarget::Monitor(monitor)) {
+                    if let Ok(frame) = capture_gdi(&backend, target) {
                         if frame.image.w > 0 && frame.image.h > 0 {
                             let f = Frame {
                                 w: frame.image.w,
@@ -165,6 +267,16 @@ impl GdiSource {
 
     fn take_latest(&mut self) -> Result<Option<Frame>> {
         Ok(self.latest.lock().ok().and_then(|mut slot| slot.take()))
+    }
+}
+
+fn capture_gdi(backend: &GdiBackend, target: GdiTarget) -> Result<screenloom_capture::CaptureFrame> {
+    match target {
+        GdiTarget::Monitor(i) => backend.capture(CaptureTarget::Monitor(i)),
+        GdiTarget::Window(h) => backend.capture(CaptureTarget::Window(HWND(
+            h as *mut core::ffi::c_void,
+        ))),
+        GdiTarget::Virtual => capture_virtual_screen(backend),
     }
 }
 

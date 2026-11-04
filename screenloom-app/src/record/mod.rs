@@ -45,6 +45,12 @@ pub const DEFAULT_BITRATE: u32 = 8_000_000;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordTarget {
     Monitor(usize),
+    /// 单个窗口（HWND 以 isize 保存，保持 options 可 Send）
+    Window(isize),
+    /// 整块虚拟屏（多显示器合成）
+    VirtualScreen,
+    /// 屏幕区域（虚拟屏物理像素）
+    Region(screenloom_core::Rect),
 }
 
 /// 录制参数。
@@ -92,10 +98,18 @@ impl RecordOptions {
             out_path: default_record_path_in(dir.as_deref()),
             fps: cfg.record_fps.clamp(1, 120),
             bitrate: cfg.record_bitrate.max(100_000),
-            duration: None,
+            duration: if cfg.record_max_seconds > 0 {
+                Some(Duration::from_secs(cfg.record_max_seconds as u64))
+            } else {
+                None
+            },
             countdown: Duration::from_secs(cfg.record_countdown.min(10) as u64),
             cursor: cfg.record_cursor,
-            max_bytes: None,
+            max_bytes: if cfg.record_max_mb > 0 {
+                Some(cfg.record_max_mb as u64 * 1024 * 1024)
+            } else {
+                None
+            },
         })
     }
 }
