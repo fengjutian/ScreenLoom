@@ -100,7 +100,7 @@ impl RecordOptions {
 ///
 /// UI/常驻模式请用 [`RecordSession`] + [`controller`]。
 pub fn record(opts: &RecordOptions) -> Result<RecordOutcome> {
-    let stats = SharedStats::new();
+    let stats = std::sync::Arc::new(SharedStats::new());
     let (tx, rx) = mpsc::channel();
     let session = RecordSession::start(opts, stats, move |event| {
         let _ = tx.send(event);

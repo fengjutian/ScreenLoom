@@ -152,9 +152,10 @@ impl Controller {
         }
         let opts = RecordOptions::from_config(&self.cfg)?;
         let stats = Arc::new(SharedStats::new());
-        let hwnd = self.hwnd;
+        let hwnd_raw = self.hwnd.0 as isize;
         let session = RecordSession::start(&opts, Arc::clone(&stats), move |event| {
             let raw = Box::into_raw(Box::new(event)) as isize;
+            let hwnd = HWND(hwnd_raw as *mut core::ffi::c_void);
             unsafe {
                 let _ = PostMessageW(Some(hwnd), WM_RECORDER_EVENT, WPARAM(0), LPARAM(raw));
             }

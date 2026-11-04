@@ -13,11 +13,12 @@ use screenloom_ui::gdiplus::{self, Graphics};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateRoundRectRgn, DeleteObject, GetMonitorInfoW, MonitorFromPoint, SetWindowRgn, HBRUSH,
-    MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    BeginPaint, CreateRoundRectRgn, EndPaint, GetMonitorInfoW, GetSystemMetrics,
+    InvalidateRect, MonitorFromPoint, SetWindowRgn, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    PAINTSTRUCT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::HiDpi::{GetDpiForSystem, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -32,6 +33,8 @@ const HUD_H: i32 = 64;
 struct HudContext {
     stats: Arc<SharedStats>,
     controller: HWND,
+    /// 创建时的 DPI 缩放（物理/逻辑）
+    scale: f32,
     /// 暂停按钮 / 停止按钮的客户区矩形（物理像素）
     pause_rect: RECT,
     stop_rect: RECT,
@@ -46,7 +49,7 @@ impl RecorderHud {
     /// 创建并显示 HUD。`controller` 接收按钮命令（[`WM_RECORDER_HUD`]）。
     pub fn show(stats: Arc<SharedStats>, controller: HWND) -> Result<RecorderHud> {
         register_class()?;
-        let dpi = unsafe { GetDpiForWindow(HWND(std::ptr::null_mut())) };
+        let dpi = unsafe { GetDpiForSystem() };
         let k = if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 };
         let w = (HUD_W as f32 * k).round() as i32;
         let h = (HUD_H as f32 * k).round() as i32;
@@ -55,6 +58,7 @@ impl RecorderHud {
         let ctx = Box::new(HudContext {
             stats,
             controller,
+            scale: k,
             pause_rect: RECT {
                 left: w - (100.0 * k) as i32,
                 top: (12.0 * k) as i32,
@@ -213,7 +217,12 @@ unsafe extern "system" fn hud_wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPA
             if !in_rect(p, ctx.pause_rect) && !in_rect(p, ctx.stop_rect) {
                 unsafe {
                     let _ = ReleaseCapture();
-                    let _ = SendMessageW(hwnd, WM_NCLBUTTONDOWN, WPARAM(HTCAPTION as usize), LPARAM(0));
+                    let _ = SendMessageW(
+                        hwnd,
+                        WM_NCLBUTTONDOWN,
+                        Some(WPARAM(HTCAPTION as usize)),
+                        Some(LPARAM(0)),
+                    );
                 }
             }
             return LRESULT(0);
@@ -248,8 +257,7 @@ fn paint(hdc: windows::Win32::Graphics::Gdi::HDC, ctx: &HudContext) {
         Ok(g) => g,
         Err(_) => return,
     };
-    let dpi = unsafe { GetDpiForWindow(unsafe { GetActiveWindow() }) };
-    let k = if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 };
+    let k = ctx.scale;
     let w = (HUD_W as f32 * k).round();
     let h = (HUD_H as f32 * k).round();
 

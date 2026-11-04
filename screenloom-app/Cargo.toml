@@ -29,6 +29,7 @@ windows = { workspace = true, features = [
     "Storage",
     "Storage_Streams",
     "Win32_Storage_Xps",
+    "Win32_Storage_FileSystem",
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
