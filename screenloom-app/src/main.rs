@@ -69,6 +69,8 @@ struct Args {
     record_countdown: Option<u32>,
     /// `--settings`：打开设置窗口
     open_settings: bool,
+    /// `--record-settings`：打开录屏设置窗口
+    open_record_settings: bool,
     provider: Option<ai::Provider>,
     model: Option<String>,
     endpoint: Option<String>,
@@ -226,6 +228,7 @@ fn main() {
                 }
             }
             "--settings" => args.open_settings = true,
+            "--record-settings" => args.open_record_settings = true,
             "--provider" => {
                 i += 1;
                 let Some(p) = argv.get(i) else {
@@ -460,6 +463,19 @@ fn main() {
         return;
     }
 
+    // ---- 录屏设置 ----
+    if args.open_record_settings {
+        match settings::open_record(&cfg_path) {
+            Ok(Some(_)) => println!("录屏设置已保存到 {}", cfg_path.display()),
+            Ok(None) => println!("已取消。"),
+            Err(e) => {
+                eprintln!("录屏设置失败: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     #[cfg(feature = "full")]
     {
         let result = if args.once {
@@ -503,6 +519,7 @@ fn print_help() {
          screenloom --record-fps N     录制帧率（1–120，默认 30）\n  \
          screenloom --record-bitrate B 录制码率（bps，默认 8000000）\n  \
          screenloom --record-countdown N 开始前倒计时秒数（0–10）\n  \
+         screenloom --record-settings 打开录屏设置窗口\n  \
          screenloom --hotkey KEY   指定热键，如 Ctrl+Shift+A / Alt+F9\n  \
          screenloom --config PATH  指定配置文件\n  \
          screenloom --theme PATH   主题覆盖 JSON（配色/圆角，文件改了自动热重载）\n  \

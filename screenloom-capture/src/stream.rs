@@ -58,12 +58,19 @@ pub struct ScreenStream {
 }
 
 impl ScreenStream {
-    /// 建立持续捕获会话。
+    /// 建立持续捕获会话（不录鼠标指针）。
     ///
     /// `target` 与 [`crate::default_backend`] 的语义一致：按显示器下标或窗口句柄。
     ///
     /// **调用线程必须自己进入 COM MTA 套间**（[`WgcBackend::new`] 内部会进入并持有守卫）。
     pub fn start(target: CaptureTarget) -> Result<ScreenStream> {
+        Self::start_with_cursor(target, false)
+    }
+
+    /// 同 [`ScreenStream::start`]，可指定是否把鼠标指针合成进帧。
+    ///
+    /// 注意：只有 WGC 路径有效；GDI 兜底路径拿不到硬件光标。
+    pub fn start_with_cursor(target: CaptureTarget, cursor: bool) -> Result<ScreenStream> {
         let backend = WgcBackend::new()?;
         let item = create_item(target)?;
         let size = item
@@ -91,7 +98,7 @@ impl ScreenStream {
             .CreateCaptureSession(&item)
             .map_err(|e| Error::Capture(format!("创建 WGC 捕获会话失败: {e}")))?;
         // 老系统不支持这些属性，忽略失败即可。
-        let _ = session.SetIsCursorCaptureEnabled(false);
+        let _ = session.SetIsCursorCaptureEnabled(cursor);
         let _ = session.SetIsBorderRequired(false);
 
         let dirty = Arc::new(AtomicBool::new(false));

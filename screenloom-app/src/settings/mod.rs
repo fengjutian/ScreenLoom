@@ -84,6 +84,7 @@ mod combo;
 mod controls;
 mod layout;
 mod paint;
+mod record_settings;
 mod state;
 mod validate;
 
@@ -91,6 +92,7 @@ pub(crate) use combo::*;
 pub(crate) use controls::*;
 pub(crate) use layout::*;
 pub(crate) use paint::*;
+pub(crate) use record_settings::open as open_record;
 pub(crate) use state::*;
 pub(crate) use validate::*;
 

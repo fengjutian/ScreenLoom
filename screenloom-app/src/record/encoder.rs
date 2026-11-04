@@ -260,17 +260,9 @@ impl VideoEncoder {
                 .SetSampleDuration(self.duration_100ns)
                 .map_err(mf_err)?;
 
-            let __t = std::time::Instant::now();
-            eprintln!("[D] {} write#{} enter", ts_ms(), self.written);
             self.sink
                 .WriteSample(self.stream_index, &sample)
                 .map_err(|e| Error::Image(format!("写入第 {} 帧失败: {e}", self.written)))?;
-            eprintln!(
-                "[D] {} write#{} done {:.1}ms",
-                ts_ms(),
-                self.written,
-                __t.elapsed().as_secs_f64() * 1000.0
-            );
         }
         self.written += 1;
         Ok(())
@@ -283,34 +275,42 @@ impl VideoEncoder {
     /// **调用前应先补写尾部填充帧**：编码器流水线的最后几帧不会被 `Flush` 冲出来
     /// （实测固定丢 ~3 帧 ≈ 100 ms）。补帧由上层做（它手里有最后一帧的缓存）。
     pub fn finish(&mut self) -> Result<()> {
+        self.flush()?;
+        self.finalize()
+    }
+
+    /// `Flush`：把编码器流水线里的样本冲出来。
+    ///
+    /// 与 [`VideoEncoder::finalize`] 分开，是为了让上层能分别标记阶段 ——
+    /// MF 内部偶发阻塞时（实测约 9% 的录制会卡住），能定位到底是卡在
+    /// 写帧、`Flush` 还是 `Finalize`。
+    pub fn flush(&mut self) -> Result<()> {
+        if self.finished {
+            return Ok(());
+        }
+        // SAFETY: 同 write_frame。
+        unsafe {
+            self.sink
+                .Flush(self.stream_index)
+                .map_err(|e| Error::Image(format!("Flush 失败: {e}")))?;
+        }
+        Ok(())
+    }
+
+    /// `Finalize`：写 `moov`，产出的 MP4 至此才可播。
+    pub fn finalize(&mut self) -> Result<()> {
         if self.finished {
             return Ok(());
         }
         self.finished = true;
-
         // SAFETY: 同 write_frame。
         unsafe {
-            eprintln!("[D] {} flush enter", ts_ms());
-            self.sink
-                .Flush(self.stream_index)
-                .map_err(|e| Error::Image(format!("Flush 失败: {e}")))?;
-            eprintln!("[D] {} flush done", ts_ms());
-            eprintln!("[D] {} finalize enter", ts_ms());
             self.sink
                 .Finalize()
                 .map_err(|e| Error::Image(format!("Finalize 失败: {e}")))?;
-            eprintln!("[D] {} finalize done", ts_ms());
         }
         Ok(())
     }
-}
-
-/// 毫秒级墙钟时间戳（诊断用）。
-fn ts_ms() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0)
 }
 
 impl Drop for VideoEncoder {

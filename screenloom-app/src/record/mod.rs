@@ -58,6 +58,8 @@ pub struct RecordOptions {
     pub duration: Option<Duration>,
     /// 开始前倒计时。
     pub countdown: Duration,
+    /// 是否把鼠标指针录进画面。
+    pub cursor: bool,
     /// 最大文件大小；`None` = 不限。
     pub max_bytes: Option<u64>,
 }
@@ -72,6 +74,7 @@ impl RecordOptions {
             bitrate: DEFAULT_BITRATE,
             duration: None,
             countdown: Duration::ZERO,
+            cursor: true,
             max_bytes: None,
         })
     }
@@ -91,6 +94,7 @@ impl RecordOptions {
             bitrate: cfg.record_bitrate.max(100_000),
             duration: None,
             countdown: Duration::from_secs(cfg.record_countdown.min(10) as u64),
+            cursor: cfg.record_cursor,
             max_bytes: None,
         })
     }

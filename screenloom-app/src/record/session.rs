@@ -26,7 +26,7 @@ use super::encoder::VideoEncoder;
 use super::pacer::FramePacer;
 use super::paths::RecordPaths;
 use super::source::FrameSource;
-use super::stats::{Phase, SharedStats};
+use super::stats::{Phase, SharedStats, Stage};
 use super::RecordOptions;
 
 /// 收尾补写的帧数（编码器流水线尾部会丢 ~3 帧）。
@@ -37,6 +37,19 @@ const POLL_INTERVAL: Duration = Duration::from_millis(4);
 const PAUSED_POLL: Duration = Duration::from_millis(20);
 /// 低于这个可用空间就自动停止。
 pub const MIN_FREE_BYTES: u64 = 200 * 1024 * 1024;
+/// 看门狗轮询间隔。
+const WATCHDOG_POLL: Duration = Duration::from_millis(500);
+/// 心跳停滞超过这个时长就判定录制线程卡死（MF 内部阻塞）。
+const STALL_TIMEOUT_MS: u64 = 8_000;
+
+/// 看门狗阈值。可用 `SCREENLOOM_STALL_TIMEOUT_MS` 覆盖（排障 / 自测用）。
+fn stall_timeout_ms() -> u64 {
+    std::env::var("SCREENLOOM_STALL_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(STALL_TIMEOUT_MS)
+}
 
 /// 停止原因。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,6 +103,8 @@ struct Control {
     stop: AtomicBool,
     paused: AtomicBool,
     discard: AtomicBool,
+    /// 看门狗判定录制线程卡死后置位：用于阻止 worker 再发一次终态事件。
+    aborted: AtomicBool,
     reason: Mutex<StopReason>,
 }
 
@@ -99,6 +114,7 @@ impl Control {
             stop: AtomicBool::new(false),
             paused: AtomicBool::new(false),
             discard: AtomicBool::new(false),
+            aborted: AtomicBool::new(false),
             reason: Mutex::new(StopReason::User),
         }
     }
@@ -154,11 +170,56 @@ impl RecordSession {
         let control2 = Arc::clone(&control);
         let stats2 = Arc::clone(&stats);
         let paths2 = paths.clone();
+        let paths_wd = paths.clone();
         let on_event = Arc::new(on_event);
         let join = std::thread::Builder::new()
             .name("screenloom-record".into())
             .spawn(move || {
-                run_worker(opts, control2, stats2, paths2, init_tx, on_event);
+                // 内层线程：真正跑录制。它可能**永久阻塞**在 Media Foundation 内部
+                // （实测约 9% 的录制会卡在 WriteSample / Flush / Finalize 里出不来），
+                // 所以外层必须有看门狗，不能让整个程序跟着挂死。
+                let (done_tx, done_rx) = mpsc::channel::<()>();
+                let stats_inner = Arc::clone(&stats2);
+                let on_event_inner = Arc::clone(&on_event);
+                let control_inner = Arc::clone(&control2);
+                let _inner = std::thread::Builder::new()
+                    .name("screenloom-record-inner".into())
+                    .spawn(move || {
+                        run_worker(
+                            opts,
+                            control_inner,
+                            stats_inner,
+                            paths2,
+                            init_tx,
+                            on_event_inner,
+                        );
+                        let _ = done_tx.send(());
+                    });
+
+                // 看门狗：录制线程心跳停滞超过阈值 → 判定 MF 内部阻塞 → 中止并报错。
+                loop {
+                    match done_rx.recv_timeout(WATCHDOG_POLL) {
+                        Ok(()) => break,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(mpsc::RecvTimeoutError::Timeout) => {
+                            let stalled = stats2.stalled_ms();
+                            if !stats2.is_stalled(stall_timeout_ms()) {
+                                continue;
+                            }
+                            let stage = stats2.stage();
+                            control2.aborted.store(true, Ordering::Release);
+                            control2.request_stop(StopReason::EncoderError);
+                            on_event(RecordEvent::Failed(format!(
+                                "录制在「{}」阶段停滞超过 {} 秒，已中止。\n\
+                                 临时文件已保留（可能无法播放）：{}",
+                                stage.text(),
+                                stalled / 1000,
+                                paths_wd.partial.display()
+                            )));
+                            break;
+                        }
+                    }
+                }
             })
             .map_err(|e| Error::Window(format!("启动录制线程失败: {e}")))?;
 
@@ -226,10 +287,17 @@ fn run_worker(
     init_tx: mpsc::SyncSender<Result<()>>,
     on_event: Arc<dyn Fn(RecordEvent) + Send + Sync>,
 ) {
+    // 看门狗判定录制线程卡死后，worker 不能再发终态事件（否则会重复上报）。
+    let emit = |ev: RecordEvent| {
+        if !control.aborted.load(Ordering::Acquire) {
+            on_event(ev);
+        }
+    };
+
     // ---- 初始化：磁盘 → 帧源 → 编码器 ----
     let init = (|| -> Result<(FrameSource, VideoEncoder)> {
         check_free_space(paths.partial.parent())?;
-        let stream = FrameSource::open(opts.target, opts.fps)?;
+        let stream = FrameSource::open(opts.target, opts.fps, opts.cursor)?;
         let (w, h) = stream.size();
         let enc = VideoEncoder::new(&paths.partial, w, h, opts.fps, opts.bitrate)?;
         Ok((stream, enc))
@@ -244,7 +312,7 @@ fn run_worker(
             let _ = init_tx.send(Err(Error::Capture(e.to_string())));
             paths.discard();
             stats.set_phase(Phase::Failed);
-            on_event(RecordEvent::Failed(e.to_string()));
+            emit(RecordEvent::Failed(e.to_string()));
             return;
         }
     };
@@ -253,7 +321,7 @@ fn run_worker(
     if !countdown(&control, &stats, opts.countdown) {
         paths.discard();
         stats.set_phase(Phase::Idle);
-        on_event(RecordEvent::Discarded(control.reason()));
+        emit(RecordEvent::Discarded(control.reason()));
         return;
     }
 
@@ -286,6 +354,8 @@ fn run_worker(
             stats.set_elapsed_ms(
                 (now.saturating_duration_since(start) - paused_total).as_millis() as u64,
             );
+            // 暂停期间也要刷新心跳，否则看门狗会把"暂停很久"误判成卡死。
+            stats.touch();
             std::thread::sleep(PAUSED_POLL);
             continue;
         } else if let Some(t) = paused_at.take() {
@@ -296,7 +366,8 @@ fn run_worker(
         }
 
         // 取最新帧；没有新画面就沿用上一帧。
-        eprintln!("[D] {} take enter", ts_ms());
+        stats.set_stage(Stage::Capture);
+        stats.touch();
         match stream.take_latest() {
             Ok(Some(frame)) => {
                 if let Err(e) = bgra_to_nv12_into(&frame.data, frame.w, frame.h, &mut nv12) {
@@ -313,10 +384,10 @@ fn run_worker(
                 break;
             }
         }
-        eprintln!("[D] {} take done", ts_ms());
 
         if have_frame {
             if let Some(pts) = pacer.tick(now) {
+                stats.set_stage(Stage::Write);
                 if let Err(e) = enc.write_frame(&nv12, pts) {
                     reason = StopReason::EncoderError;
                     eprintln!("录屏写帧失败: {e}");
@@ -324,6 +395,7 @@ fn run_worker(
                 }
                 frames += 1;
                 stats.set_frames(frames);
+                stats.set_stage(Stage::Capture);
             }
         }
 
@@ -366,26 +438,34 @@ fn run_worker(
     stats.set_phase(Phase::Stopping);
     let active = start.elapsed().saturating_sub(paused_total);
     if !control.discard.load(Ordering::Acquire) && have_frame {
+        stats.set_stage(Stage::Tail);
         for _ in 0..TAIL_PADDING_FRAMES {
             let pts = pacer.pts();
+            stats.set_stage(Stage::Write);
             let _ = enc.write_frame(&nv12, pts);
+            stats.set_stage(Stage::Tail);
             pacer.advance();
             frames += 1;
         }
     }
-    let finish_result = enc.finish();
+    // 分开标记 Flush / Finalize：MF 内部偶发阻塞时要能定位卡在哪一步。
+    stats.set_stage(Stage::Flush);
+    let finish_result = enc.flush().and_then(|()| {
+        stats.set_stage(Stage::Finalize);
+        enc.finalize()
+    });
 
     if control.discard.load(Ordering::Acquire) {
         paths.discard();
         stats.set_phase(Phase::Idle);
-        on_event(RecordEvent::Discarded(reason));
+        emit(RecordEvent::Discarded(reason));
         return;
     }
 
     if let Err(e) = finish_result {
         // 收尾失败：保留 .partial，明确告诉用户文件可能损坏。
         stats.set_phase(Phase::Failed);
-        on_event(RecordEvent::Failed(format!(
+        emit(RecordEvent::Failed(format!(
             "{e}（已保留临时文件 {}）",
             paths.partial.display()
         )));
@@ -394,7 +474,7 @@ fn run_worker(
 
     if let Err(e) = paths.finalize() {
         stats.set_phase(Phase::Failed);
-        on_event(RecordEvent::Failed(format!(
+        emit(RecordEvent::Failed(format!(
             "保存失败: {e}（临时文件 {}）",
             paths.partial.display()
         )));
@@ -407,7 +487,7 @@ fn run_worker(
     stats.set_bytes(bytes);
     stats.set_elapsed_ms(active.as_millis() as u64);
     stats.set_phase(Phase::Finished);
-    on_event(RecordEvent::Finished(RecordOutcome {
+    emit(RecordEvent::Finished(RecordOutcome {
         path: paths.final_path.clone(),
         frames,
         elapsed: active,
@@ -426,6 +506,7 @@ fn countdown(control: &Control, stats: &SharedStats, total: Duration) -> bool {
             return false;
         }
         stats.set_elapsed_ms(start.elapsed().as_millis() as u64);
+        stats.touch();
         std::thread::sleep(Duration::from_millis(50));
     }
     !control.is_stopped()
@@ -459,12 +540,4 @@ fn free_bytes(dir: Option<&std::path::Path>) -> Option<u64> {
         .ok()?;
     }
     Some(free)
-}
-
-/// 毫秒级墙钟时间戳（诊断用）。
-fn ts_ms() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0)
 }

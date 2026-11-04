@@ -76,6 +76,11 @@ pub fn run_hotkey_loop(cfg: &Config, cfg_path: &std::path::Path) -> Result<()> {
         crate::tray::TrayCommand::RecordStop => recorder_for_tray.stop(),
         crate::tray::TrayCommand::RecordTogglePause => recorder_for_tray.toggle_pause(),
         crate::tray::TrayCommand::OpenRecordFolder => recorder_for_tray.open_last_folder(),
+        crate::tray::TrayCommand::RecordSettings => {
+            if let Err(e) = crate::settings::open_record(&path_owned) {
+                eprintln!("打开录屏设置失败: {e}");
+            }
+        }
         crate::tray::TrayCommand::Exit => unsafe {
             windows::Win32::UI::WindowsAndMessaging::PostQuitMessage(0);
         },

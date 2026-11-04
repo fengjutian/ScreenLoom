@@ -38,11 +38,11 @@ pub struct FrameSource {
 
 impl FrameSource {
     /// 打开帧源：先 WGC，失败自动降级 GDI。
-    pub fn open(target: RecordTarget, fps: u32) -> Result<FrameSource> {
+    pub fn open(target: RecordTarget, fps: u32, cursor: bool) -> Result<FrameSource> {
         let capture_target = match target {
             RecordTarget::Monitor(i) => CaptureTarget::Monitor(i),
         };
-        match ScreenStream::start(capture_target) {
+        match ScreenStream::start_with_cursor(capture_target, cursor) {
             Ok(s) => {
                 let (w, h) = s.size();
                 Ok(FrameSource {

@@ -186,6 +186,18 @@ impl SharedStats {
         }
         now_ms().saturating_sub(hb)
     }
+
+    /// 心跳停滞是否已超过阈值（看门狗判定卡死）。
+    pub fn is_stalled(&self, timeout_ms: u64) -> bool {
+        self.stalled_ms() >= timeout_ms
+    }
+
+    /// 仅测试用：把心跳强行回拨，模拟"停滞了 `ms` 毫秒"。
+    #[cfg(test)]
+    pub fn force_stall(&self, ms: u64) {
+        self.heartbeat
+            .store(now_ms().saturating_sub(ms), Ordering::Relaxed);
+    }
 }
 
 /// 毫秒级墙钟。
@@ -194,4 +206,46 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn heartbeat_tracks_activity() {
+        let s = SharedStats::new();
+        // 从未活动过不算停滞（否则刚启动录制就会被看门狗误杀）。
+        assert_eq!(s.stalled_ms(), 0);
+        s.touch();
+        assert!(s.stalled_ms() < 1_000, "刚刷新过心跳");
+    }
+
+    #[test]
+    fn stage_roundtrips() {
+        let s = SharedStats::new();
+        assert_eq!(s.stage(), Stage::Idle);
+        for st in [
+            Stage::Capture,
+            Stage::Write,
+            Stage::Tail,
+            Stage::Flush,
+            Stage::Finalize,
+        ] {
+            s.set_stage(st);
+            assert_eq!(s.stage(), st);
+            assert!(!st.text().is_empty());
+        }
+    }
+
+    #[test]
+    fn stall_is_detected_only_after_threshold() {
+        let s = SharedStats::new();
+        s.touch();
+        assert!(!s.is_stalled(1_000), "刚刷新过心跳不应判为停滞");
+        // 模拟心跳停滞 5 秒。
+        s.force_stall(5_000);
+        assert!(s.is_stalled(1_000));
+        assert!(!s.is_stalled(10_000), "阈值更大时不应判为停滞");
+    }
 }

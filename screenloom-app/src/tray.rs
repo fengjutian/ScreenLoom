@@ -42,6 +42,8 @@ pub enum TrayCommand {
     RecordTogglePause,
     /// 打开录像文件夹
     OpenRecordFolder,
+    /// 打开录屏设置
+    RecordSettings,
     /// 退出程序
     Exit,
 }
@@ -53,7 +55,8 @@ const MENU_RECORD_START: usize = 2004;
 const MENU_RECORD_STOP: usize = 2005;
 const MENU_RECORD_PAUSE: usize = 2006;
 const MENU_RECORD_FOLDER: usize = 2007;
-const MENU_EXIT: usize = 2008;
+const MENU_RECORD_SETTINGS: usize = 2008;
+const MENU_EXIT: usize = 2009;
 
 /// 托盘回调消息（Shell 发给托盘窗口）。
 pub const WM_TRAY: u32 = WM_APP + 20;
@@ -255,6 +258,12 @@ unsafe fn show_menu(hwnd: HWND) {
         MENU_RECORD_FOLDER,
         PCWSTR(wide("打开录像文件夹").as_ptr()),
     );
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        MENU_RECORD_SETTINGS,
+        PCWSTR(wide("录屏设置…").as_ptr()),
+    );
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
     let _ = AppendMenuW(
         menu,
@@ -295,6 +304,7 @@ unsafe fn show_menu(hwnd: HWND) {
         MENU_RECORD_STOP => fire(TrayCommand::RecordStop),
         MENU_RECORD_PAUSE => fire(TrayCommand::RecordTogglePause),
         MENU_RECORD_FOLDER => fire(TrayCommand::OpenRecordFolder),
+        MENU_RECORD_SETTINGS => fire(TrayCommand::RecordSettings),
         MENU_SETTINGS => fire(TrayCommand::Settings),
         MENU_EXIT => fire(TrayCommand::Exit),
         _ => {}
@@ -322,6 +332,7 @@ unsafe extern "system" fn tray_wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
                 MENU_RECORD_STOP => fire(TrayCommand::RecordStop),
                 MENU_RECORD_PAUSE => fire(TrayCommand::RecordTogglePause),
                 MENU_RECORD_FOLDER => fire(TrayCommand::OpenRecordFolder),
+                MENU_RECORD_SETTINGS => fire(TrayCommand::RecordSettings),
                 MENU_SETTINGS => fire(TrayCommand::Settings),
                 MENU_EXIT => fire(TrayCommand::Exit),
                 _ => {}
