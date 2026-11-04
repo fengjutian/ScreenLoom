@@ -22,8 +22,8 @@ npm run dev        # http://localhost:5173
 ```
 website/
 ├─ index.html          页面骨架 + SEO meta
-├─ netlify.toml        Netlify 部署配置
 ├─ public/
+│  ├─ _redirects       SPA 回落规则（拖拽部署 dist/ 时也能生效）
 │  ├─ icon.png         应用图标（取自 screenloom-app/assets）
 │  └─ img/             真实界面截图（从 probes/e2e_out 裁剪）
 └─ src/
@@ -32,6 +32,10 @@ website/
    ├─ data/features.ts 站点文案与数据
    └─ main.tsx         入口
 ```
+
+> `netlify.toml` 放在**仓库根目录**（不在 website/ 里）：Netlify 只在根目录的
+> netlify.toml 里认 `base` 属性，且文件内所有路径都相对 base 解析。
+> 根目录那份已经把 `base = "website"` / `publish = "dist"` 配好了。
 
 ## 内容维护
 
@@ -46,7 +50,7 @@ website/
 ### 方式一：Git 集成（推荐）
 
 1. 在 Netlify 后台 `Add new site` → `Import an existing project`，选本仓库。
-2. 填构建参数（`netlify.toml` 已写好，一般会自动识别）：
+2. 填构建参数：
 
    | 项 | 值 |
    |---|---|
@@ -57,6 +61,11 @@ website/
 
 3. Deploy。后续每次 push 自动部署。
 
+> Base directory 也可以留空：根目录的 `netlify.toml` 已经声明了 `base = "website"`，
+> 按 Netlify 规则它会覆盖 UI 里的同名设置。但留空时 build command 会在仓库根执行，
+> 需要改成 `npm run build --prefix website`。**推荐按上表显式填 `website`**，
+> 两种方式都能跑通，显式填更不容易踩坑。
+
 ### 方式二：拖拽部署
 
 ```powershell
@@ -65,6 +74,7 @@ npm run build
 ```
 
 把 `website/dist` 整个文件夹拖到 Netlify 后台的 `Deploys` → `Upload a folder`。
+拖拽方式不带 netlify.toml，所以 SPA 回落规则写在 `public/_redirects` 里（会进 dist）。
 
 ### 方式三：Netlify CLI
 
@@ -75,7 +85,7 @@ netlify deploy --dir=website/dist --prod
 
 ## 说明
 
-- 站点是单页应用，`netlify.toml` 里配了 `/* → /index.html`（状态 200），
-  直接访问任意路径刷新都不会 404。
-- `dist/` 与 `node_modules/` 已在 `.gitignore` 里，不入库。
+- 站点是单页应用，`public/_redirects` 里配了 `/* → /index.html`（状态 200），
+  直接访问任意路径刷新都不会 404；根目录 netlify.toml 里没有重复这条规则。
+- `dist/` 与 `node_modules/` 已在 `website/.gitignore` 里，不入库。
 - 配色沿用应用自己的 `theme.dev.json`，改主题时两边同步。

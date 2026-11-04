@@ -1,0 +1,34 @@
+# Netlify 部署配置（仓库根目录）
+#
+# 为什么放在仓库根而不是 website/：
+# Netlify 会按「package 目录 → base 目录 → 仓库根」的顺序找 netlify.toml，
+# 且文件里的路径都相对 base 目录解析；`base` 属性只有在**根目录**的
+# netlify.toml 里才会生效。所以这里放根目录，`base = "website"` 就是
+# 唯一且确定的配置源。
+#
+#   base    = "website"  → 装依赖 + 跑 build command 的目录
+#   publish = "dist"     → 相对 base，即 website/dist
+#
+# SPA 的 /* → /index.html 重写放在 website/public/_redirects，
+# 这样拖拽部署 dist/ 也能生效（netlify.toml 不会跟着拖过去）。
+
+[build]
+  base = "website"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Vite 8 要求 node ^20.19.0 || >=22.12.0
+  NODE_VERSION = "22"
+
+# 带内容 hash 的构建产物可以长缓存
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

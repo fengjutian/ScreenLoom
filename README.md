@@ -377,7 +377,8 @@ npm run build      # 产物在 website/dist
 ```
 
 部署到 Netlify：Base directory 设为 `website`，Build command `npm run build`，
-Publish directory `dist`（`website/netlify.toml` 已配好，含 SPA 重写）。
+Publish directory `dist`。仓库根目录的 `netlify.toml` 已配好（`base = "website"` /
+`publish = "dist"` / Node 22），SPA 回落规则在 `website/public/_redirects`。
 详见 `website/README.md`。
 
 ---

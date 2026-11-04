@@ -422,10 +422,13 @@ section {
   height: auto;
 }
 
-/* 设置窗口很高，限高后按原比例缩放，避免把版面撑出一条长白边 */
+/* 设置窗口很高，限高后按原比例缩放，避免把版面撑出一条长白边。
+   max-width 兜底窄屏：否则 width:auto 会按原始 797px 撑破手机视口。 */
 .shot img.shot-tall {
+  max-width: 100%;
   max-height: 460px;
   width: auto;
+  height: auto;
   align-self: center;
 }
 
