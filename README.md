@@ -42,10 +42,12 @@ D:\github\screenloom\
 ├─ screenloom-ui/        渲染交互：GDI+ 管线 / 分层浮窗 / 选区 / 编辑器 / 工具栏 / 贴图窗
 ├─ screenloom-app/       应用层：main / hotkey / tray / settings / theme / clipboard / ai / ocr / save
 ├─ scripts/          E2E 与探针脚本（PowerShell）
-└─ e2e_out/          视觉留证截图
+└─ probes/           探针与留证：mftprobe/（MF 编码器探针）· evidence/（取证产物）· e2e_out/（截图输出）
 ```
 
 依赖方向**单向**：`app → ui → capture → core`。
+
+`screenloom-app/src/settings/` 按职责拆成 7 个模块：`mod.rs`（窗口过程 + `open()` 入口）、`layout.rs`（字段模型与布局计算）、`state.rs`（窗口状态与配置绑定）、`paint.rs`（自绘）、`controls.rs`（原生 `EDIT` / `BUTTON`）、`combo.rs`（自绘下拉框）、`validate.rs`（保存前校验）。
 
 | crate | 职责 | 硬约束 |
 |---|---|---|
@@ -287,6 +289,8 @@ cargo run -p screenloom-app --example ocr_probe
 
 ---
 
+> 留证截图统一写到 `probes/e2e_out/`（脚本自己建目录），不再落在仓库根目录。
+
 ## 7. 八个必踩的坑
 
 1. **编译前先杀 `screenloom-app`** —— exe 被占用会报 `failed to remove file ... 拒绝访问 (os error 5)`。
@@ -304,7 +308,7 @@ cargo run -p screenloom-app --example ocr_probe
 
 | 想做的事 | 落点 |
 |---|---|
-| 新配置项 | `screenloom-core/src/config.rs` 加字段 → `screenloom-app/src/settings.rs` 加 `Field` / `SECTIONS`（**`EDIT` 创建顺序必须 == 字段顺序**，E2E 按下标取控件） |
+| 新配置项 | `screenloom-core/src/config.rs` 加字段 → `screenloom-app/src/settings/layout.rs` 加 `Field` / `SECTIONS`（**`EDIT` 创建顺序必须 == 字段顺序**，E2E 按下标取控件） |
 | 改界面配色 / 圆角 | `screenloom-app/src/theme.rs`（纯配色 + 绘制基元，不含 Win32 逻辑） |
 | 新截图工具 / 编辑器 | `screenloom-ui/src/toolbar.rs` + `screenloom-ui/src/overlay.rs` |
 | 新工具栏按钮 | ① `toolbar.rs` 加 `ItemKind` 变体 + `measure()` 宽度 + `build()` 布局 + `paint()` 标签；② `overlay.rs` 加分支（必要时加 `OverlayAction` 变体）；③ `screenloom-app/src/flow.rs` 装 handler / 处理 action。**宽度一定要同步改 `measure()`**，否则工具栏排版错位 |
