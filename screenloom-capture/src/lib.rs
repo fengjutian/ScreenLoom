@@ -20,6 +20,10 @@ mod monitors;
 mod stream;
 mod virtual_screen;
 mod wgc;
+// 模块名用 `wins` 而不是 `windows`：crate 内 `mod windows` 会让
+// `use windows::...` 变成二义路径（crate 名 vs 模块名）。
+#[path = "windows.rs"]
+mod wins;
 
 pub use errors::{is_capture_protected_err, CAPTURE_PROTECTED_MESSAGE};
 pub use gdi::GdiBackend;
@@ -29,6 +33,10 @@ pub use monitors::{
 pub use stream::{BgraFrame, ScreenStream};
 pub use virtual_screen::capture_virtual_screen;
 pub use wgc::WgcBackend;
+pub use wins::{
+    is_window_capture_excluded, list_capture_windows, list_own_windows,
+    set_window_capture_excluded, WindowInfo, WDA_EXCLUDEFROMCAPTURE,
+};
 
 /// 一次捕获的结果。
 #[derive(Clone, Debug)]

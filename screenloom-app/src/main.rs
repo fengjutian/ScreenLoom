@@ -24,10 +24,12 @@ mod clipboard;
 mod hotkey;
 mod http;
 mod ocr;
+mod record;
 mod save;
 mod settings;
 mod theme;
 mod tray;
+mod windowpicker;
 
 #[cfg(feature = "full")]
 mod flow;
@@ -50,6 +52,12 @@ struct Args {
     ai_mosaic: bool,
     /// `--ai-probe`：只测端点连通性
     ai_probe: bool,
+    /// `--record SECONDS`：录屏时长（秒）
+    record: Option<u64>,
+    /// `--record-out PATH`：录制输出文件（.mp4）
+    record_out: Option<std::path::PathBuf>,
+    /// `--record-monitor N`：录制目标显示器下标
+    record_monitor: Option<usize>,
     /// `--settings`：打开设置窗口
     open_settings: bool,
     provider: Option<ai::Provider>,
@@ -150,6 +158,34 @@ fn main() {
             }
             "--ai-mosaic" => args.ai_mosaic = true,
             "--ai-probe" => args.ai_probe = true,
+            // ---- 录屏 ----
+            "--record" => {
+                i += 1;
+                let Some(s) = argv.get(i) else {
+                    die("--record 需要一个秒数，例如 --record 10");
+                };
+                match s.trim().parse::<u64>() {
+                    Ok(v) if v > 0 => args.record = Some(v),
+                    _ => die(&format!("--record 需要一个正整数秒数，收到: {s}")),
+                }
+            }
+            "--record-out" => {
+                i += 1;
+                let Some(p) = argv.get(i) else {
+                    die("--record-out 需要一个文件路径");
+                };
+                args.record_out = Some(std::path::PathBuf::from(p));
+            }
+            "--record-monitor" => {
+                i += 1;
+                let Some(s) = argv.get(i) else {
+                    die("--record-monitor 需要一个显示器下标");
+                };
+                match s.trim().parse::<usize>() {
+                    Ok(v) => args.record_monitor = Some(v),
+                    Err(_) => die(&format!("--record-monitor 需要一个非负整数，收到: {s}")),
+                }
+            }
             "--settings" => args.open_settings = true,
             "--provider" => {
                 i += 1;
@@ -251,6 +287,51 @@ fn main() {
     };
     if let Some(k) = args.hotkey.clone() {
         cfg.hotkey = k;
+    }
+
+    // ---- 录屏 ----
+    if let Some(secs) = args.record {
+        let mut opts = match record::RecordOptions::defaults() {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("录制初始化失败: {e}");
+                std::process::exit(1);
+            }
+        };
+        if let Some(idx) = args.record_monitor {
+            opts.target = screenloom_capture::CaptureTarget::Monitor(idx);
+        }
+        if let Some(p) = args.record_out.clone() {
+            opts.out_path = p;
+        }
+        if let Err(e) = record::check_out_ext(&opts.out_path) {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+        opts.duration = Some(std::time::Duration::from_secs(secs));
+        eprintln!(
+            "开始录制 {:.0} 秒 → {}（{} fps / {} bps）",
+            secs as f64,
+            opts.out_path.display(),
+            opts.fps,
+            opts.bitrate
+        );
+        match record::record(&opts) {
+            Ok(o) => {
+                println!("已保存: {}", o.path.display());
+                println!(
+                    "{} 帧 / {:.1} 秒 / 目标 {} fps",
+                    o.frames,
+                    o.elapsed.as_secs_f64(),
+                    opts.fps
+                );
+            }
+            Err(e) => {
+                eprintln!("录制失败: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
     }
 
     // ---- AI 命令 ----
@@ -365,6 +446,9 @@ fn print_help() {
          screenloom --long         长截图（滚动拼接）模式\n  \
          screenloom --sel x,y,w,h  脚本化截图：直接截取指定区域（虚拟屏物理坐标）\n  \
          screenloom --ocr          识别剪贴板图片里的文字\n  \
+         screenloom --record N     录屏 N 秒，输出 H.264/MP4（默认 %USERPROFILE%\\Videos\\Screenloom）\n  \
+         screenloom --record-out P 指定录制输出文件（.mp4）\n  \
+         screenloom --record-monitor N 录制指定显示器下标（默认主显示器）\n  \
          screenloom --hotkey KEY   指定热键，如 Ctrl+Shift+A / Alt+F9\n  \
          screenloom --config PATH  指定配置文件\n  \
          screenloom --theme PATH   主题覆盖 JSON（配色/圆角，文件改了自动热重载）\n  \

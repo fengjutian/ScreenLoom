@@ -151,6 +151,11 @@ pub enum OverlayOutcome {
         /// 标注，坐标相对 **裁剪后图像左上角**（0,0）。
         canvas: Canvas,
         action: OverlayAction,
+        /// 被「消除杂物」改过的背景（选区裁剪后，物理像素）。
+        ///
+        /// `None` = 背景没被改过，调用方可以直接用原始帧 `crop(region)`；
+        /// `Some(img)` = 背景被内容填充改过，**必须**用这张图当底图。
+        edited: Option<RgbaImage>,
     },
 }
 
@@ -187,6 +192,19 @@ enum Drag {
         start: Point,
         points: Vec<Point>,
     },
+    /// 「消除杂物」：框住要消除的物体
+    Erase { start: Point },
+}
+
+/// 色值面板的状态（吸管取色后出现）。
+#[derive(Clone, Copy, Debug)]
+struct ColorPanelState {
+    /// 取到的颜色。
+    color: Rgba,
+    /// 面板锚点（**背景帧内的物理像素**），面板画在它右下角。
+    anchor: Point,
+    /// 是否已经复制过色值（复制后文案变成「已复制色值」）。
+    copied: bool,
 }
 
 /// 全屏分层浮窗。
@@ -391,6 +409,33 @@ impl Overlay {
         self.state.settings_handler = Some(Box::new(f));
     }
 
+    /// 注册「识别二维码」处理器。
+    ///
+    /// 处理器在 **UI 线程**被调用（点工具栏「识别二维码」时），
+    /// 它应当**立刻返回**——解码放到后台线程，
+    /// 完成后用 [`post_ai_reply`] 把结果送回浮窗。
+    ///
+    /// 与 AI 不同：二维码解码是**本地**的，不需要 API key，所以 app 层应当**无条件**装上。
+    pub fn set_qr_handler(&mut self, f: impl Fn(RgbaImage) + Send + Sync + 'static) {
+        self.state.qr_handler = Some(Box::new(f));
+    }
+
+    /// 注册「复制文本到剪贴板」处理器。
+    ///
+    /// 浮窗自己不碰剪贴板（剪贴板属于 app 层），色值复制 / 二维码内容复制都走它。
+    pub fn set_clipboard_handler(&mut self, f: impl Fn(String) + Send + Sync + 'static) {
+        self.state.clipboard_handler = Some(Box::new(f));
+    }
+
+    /// 注册「窗口选择器」处理器。
+    ///
+    /// 工具栏上点「窗口选择」时在 **UI 线程**调用它；它应当自己弹窗口选择器
+    /// （选择器属于 app 层，不在 UI crate 里），选完后用
+    /// [`post_window_picked`] 把矩形投回浮窗。
+    pub fn set_window_picker_handler(&mut self, f: impl Fn() + Send + Sync + 'static) {
+        self.state.window_picker_handler = Some(Box::new(f));
+    }
+
     /// 渲染当前一帧（覆盖整块虚拟屏幕，物理像素），用于预览 / 自检。
     pub fn render_frame(&self) -> Result<RgbaImage> {
         let (w, h) = self.state.surface;
@@ -436,12 +481,24 @@ struct OverlayState {
     ocr_handler: Option<Box<dyn Fn(RgbaImage) + Send + Sync>>,
     /// 「打开设置」处理器（app 层注册）
     settings_handler: Option<Box<dyn Fn() + Send + Sync>>,
+    /// 「识别二维码」处理器（app 层注册）—— **本地解码，不需要 API key**
+    qr_handler: Option<Box<dyn Fn(RgbaImage) + Send + Sync>>,
+    /// 复制文本到剪贴板（app 层注册）—— 色值 / 二维码内容都走它
+    clipboard_handler: Option<Box<dyn Fn(String) + Send + Sync>>,
+    /// 「窗口选择器」处理器（app 层注册）
+    window_picker_handler: Option<Box<dyn Fn() + Send + Sync>>,
     /// 最近一次 AI 结果
     ai_reply: Option<AiReply>,
     /// AI 请求是否在飞行中
     ai_pending: bool,
     /// 结果面板的标题（问 AI / 翻译 / 提取文字…）
     ai_title: String,
+    /// 是否处于「消除杂物」模式（下一步拖拽 = 框选要消除的物体）
+    erase_mode: bool,
+    /// 背景是否被「消除杂物」改过
+    bg_modified: bool,
+    /// 色值面板
+    color_panel: Option<ColorPanelState>,
 }
 
 impl OverlayState {
@@ -462,9 +519,15 @@ impl OverlayState {
             ai_handler: None,
             ocr_handler: None,
             settings_handler: None,
+            qr_handler: None,
+            clipboard_handler: None,
+            window_picker_handler: None,
             ai_reply: None,
             ai_pending: false,
             ai_title: "AI".to_string(),
+            erase_mode: false,
+            bg_modified: false,
+            color_panel: None,
         }
     }
 
@@ -675,6 +738,8 @@ impl OverlayState {
                 );
                 self.toolbar.paint(g, &self.canvas, &self.mapper());
                 self.paint_ai_panel(g);
+                self.paint_color_panel(g);
+                self.paint_erase_hint(g);
             }
         }
     }
@@ -741,6 +806,17 @@ impl OverlayState {
                 }
                 ("AI 打码".to_string(), s, false)
             }
+            Some(AiReply::QrCodes(v)) => {
+                if v.is_empty() {
+                    ("二维码".to_string(), "选区里没有识别到二维码".to_string(), false)
+                } else {
+                    let mut s = format!("识别到 {} 个二维码", v.len());
+                    for t in v.iter().take(8) {
+                        s.push_str(&format!("\n· {t}"));
+                    }
+                    ("二维码".to_string(), s, false)
+                }
+            }
             None => (self.ai_title.clone(), "正在处理…".to_string(), false),
         };
         aipanel::paint_panel(
@@ -750,6 +826,56 @@ impl OverlayState {
             &title,
             &body,
             is_error,
+        );
+    }
+
+    /// 色值面板（吸管取色后出现）。
+    fn paint_color_panel(&self, g: &mut Graphics) {
+        let Some(cp) = self.color_panel.as_ref() else {
+            return;
+        };
+        let (sw, sh) = self.surface;
+        let scale = self.cfg.scale;
+        let w = (208.0 * scale).round() as i32;
+        let h = (86.0 * scale).round() as i32;
+        // 锚点 = 取色位置；面板画在它右下角，超出屏幕就往里挪
+        let mut x = cp.anchor.x + (14.0 * scale).round() as i32;
+        let mut y = cp.anchor.y + (18.0 * scale).round() as i32;
+        if x + w > sw {
+            x = (sw - w).max(0);
+        }
+        if y + h > sh {
+            y = (sh - h).max(0);
+        }
+        colorpanel::paint_color_panel(g, Rect::new(x, y, w, h), scale, cp.color, cp.copied);
+    }
+
+    /// 「消除杂物」模式提示。
+    fn paint_erase_hint(&self, g: &mut Graphics) {
+        if !self.erase_mode {
+            return;
+        }
+        let Some(sel) = self.selection else {
+            return;
+        };
+        let scale = self.cfg.scale;
+        let text = "拖动框住要消除的物体";
+        let size = 13.0 * scale;
+        let (tw, th) = g.measure_text(text, size, false);
+        let pad = 8.0 * scale;
+        let w = (tw + pad * 2.0) as i32;
+        let h = (th + pad * 2.0) as i32;
+        let sp = self.l2i(sel);
+        let x = sp.x + ((sp.w - w) / 2).max(0);
+        let y = (sp.y - h - (8.0 * scale) as i32).max(0);
+        g.fill_round_rect(x as f32, y as f32, w as f32, h as f32, 6.0, 0xE0_00_C3_75);
+        g.draw_text(
+            x as f32 + pad,
+            y as f32 + pad,
+            text,
+            size,
+            gdiplus::argb(Rgba::rgb(0x10, 0x10, 0x10)),
+            false,
         );
     }
 
@@ -829,7 +955,24 @@ impl OverlayState {
             region,
             canvas: self.display_canvas(),
             action,
+            edited: self.edited_pixels(),
         })
+    }
+
+    /// 「消除杂物」改过的背景（选区裁剪后，物理像素）。
+    ///
+    /// 背景没被改过时返回 `None` —— 调用方可以直接用原始帧 `crop(region)`。
+    fn edited_pixels(&self) -> Option<RgbaImage> {
+        if !self.bg_modified {
+            return None;
+        }
+        let sel = self.selection?;
+        let region = self.l2i(sel);
+        if region.is_empty() {
+            return None;
+        }
+        let bg = self.bg.as_ref()?;
+        Some(bg.crop(region))
     }
 
     fn finish(&mut self, action: OverlayAction) {
@@ -896,6 +1039,12 @@ impl OverlayState {
             Mode::Edit => {
                 if let Some(kind) = self.toolbar.hit(p) {
                     self.on_toolbar(kind);
+                    return;
+                }
+                if self.erase_mode {
+                    // 「消除杂物」：框选要消除的物体
+                    self.drag = Some(Drag::Erase { start: p });
+                    self.dirty = true;
                     return;
                 }
                 let tool = self.canvas.tool;
@@ -1023,10 +1172,68 @@ impl OverlayState {
                         _ => {}
                     }
                 }
+                Drag::Erase { start } => {
+                    let r = Rect::new(start.x, start.y, p.x - start.x, p.y - start.y).normalized();
+                    self.apply_erase(r);
+                }
                 _ => {}
             }
         }
         self.dirty = true;
+    }
+
+    /// 「消除杂物」：把框选的区域用周围内容填掉。
+    ///
+    /// 走的是**本地多尺度样例填充**（`screenloom_core::inpaint`），
+    /// 不需要 API key。填充直接改背景帧，所以最终成图要用
+    /// [`OverlayOutcome::Selected::edited`] 那份底图。
+    fn apply_erase(&mut self, logical_rect: Rect) {
+        self.erase_mode = false;
+        let Some(sel) = self.selection else {
+            return;
+        };
+        if logical_rect.w < 4 || logical_rect.h < 4 {
+            self.ai_reply = Some(AiReply::Error("框选区域太小".into()));
+            self.ai_pending = false;
+            self.ai_title = "消除杂物".to_string();
+            return;
+        }
+        // 背景帧内的物理像素矩形，并与选区求交（选区外的部分没意义）
+        let region = self
+            .l2i(logical_rect)
+            .intersect(self.l2i(sel))
+            .unwrap_or(Rect::new(0, 0, 0, 0));
+        if region.is_empty() {
+            self.ai_reply = Some(AiReply::Error("框选区域不在选区内".into()));
+            self.ai_pending = false;
+            self.ai_title = "消除杂物".to_string();
+            return;
+        }
+        // 超大区域会让本地填充跑很久，直接拒绝
+        const MAX_ERASE: i32 = 1200;
+        if region.w > MAX_ERASE || region.h > MAX_ERASE {
+            self.ai_reply = Some(AiReply::Error(format!(
+                "区域太大（{}x{}），请框小于 {MAX_ERASE}x{MAX_ERASE}",
+                region.w, region.h
+            )));
+            self.ai_pending = false;
+            self.ai_title = "消除杂物".to_string();
+            return;
+        }
+        let Some(bg) = self.bg.as_ref() else {
+            return;
+        };
+        let filled = inpaint_region(bg, region);
+        if let Some(b) = self.bg.as_mut() {
+            *b = filled;
+        }
+        self.bg_modified = true;
+        self.ai_reply = Some(AiReply::Text(format!(
+            "已消除 {}x{} 的内容",
+            region.w, region.h
+        )));
+        self.ai_pending = false;
+        self.ai_title = "消除杂物".to_string();
     }
 
     fn on_dbl_click(&mut self, lp: LPARAM) {
@@ -1079,6 +1286,10 @@ impl OverlayState {
                 self.canvas.redo();
                 self.dirty = true;
             }
+            0x43 if ctrl => {
+                // Ctrl+C —— 复制色值（对齐微信「按 Ctrl+C 复制色值」）
+                self.copy_color_value();
+            }
             _ => {}
         }
     }
@@ -1110,6 +1321,23 @@ impl OverlayState {
             ItemKind::ExtractText => {
                 if let Some(image) = self.selection_image() {
                     self.submit_ocr(image);
+                }
+            }
+            ItemKind::QrCode => {
+                if let Some(image) = self.selection_image() {
+                    self.submit_qr(image);
+                }
+            }
+            ItemKind::Erase => {
+                // 进入「消除杂物」模式：下一次拖拽 = 框住要消除的物体
+                self.erase_mode = true;
+                self.ai_reply = None;
+                self.ai_pending = false;
+                self.ai_title = "消除杂物".to_string();
+            }
+            ItemKind::WindowPick => {
+                if let Some(h) = self.window_picker_handler.as_ref() {
+                    h();
                 }
             }
             ItemKind::LongShot => {
@@ -1152,8 +1380,32 @@ impl OverlayState {
     fn pick_color(&mut self, c: Point) {
         if let Some(bg) = &self.bg {
             if let Some(col) = sample_color(bg, c.x, c.y) {
-                self.canvas.color = Rgba { a: 255, ..col };
+                let col = Rgba { a: 255, ..col };
+                self.canvas.color = col;
+                // 色值面板：显示 HEX / RGB，可 Ctrl+C 复制
+                self.color_panel = Some(ColorPanelState {
+                    color: col,
+                    anchor: c,
+                    copied: false,
+                });
             }
+        }
+        self.dirty = true;
+    }
+
+    /// 复制当前色值（HEX）到剪贴板。
+    ///
+    /// 剪贴板属于 app 层，所以这里只发请求。
+    fn copy_color_value(&mut self) {
+        let Some(cp) = self.color_panel.as_ref() else {
+            return;
+        };
+        let hex = cp.color.to_hex();
+        if let Some(h) = self.clipboard_handler.as_ref() {
+            h(hex);
+        }
+        if let Some(cp) = self.color_panel.as_mut() {
+            cp.copied = true;
         }
         self.dirty = true;
     }
@@ -1279,8 +1531,7 @@ impl OverlayState {
     /// 发起一次本地 OCR（提取文字）：**不需要 API key**。
     ///
     /// 结果用同一套回投机制（[`post_ai_reply`]）送回，标题为「提取文字」。
-    fn submit_ocr(&mut self, image: RgbaImage) {
-        self.ai_title = "提取文字".to_string();
+    fn submit_ocr(&mut self, image: RgbaImage) {        self.ai_title = "提取文字".to_string();
         self.ai_reply = None;
         self.ai_pending = true;
         self.dirty = true;
@@ -1290,6 +1541,22 @@ impl OverlayState {
             self.ai_reply = Some(AiReply::Error(
                 "本机没有可用的 OCR（未安装语言包？）".into(),
             ));
+            self.ai_pending = false;
+        }
+    }
+
+    /// 发起一次二维码识别：**本地解码，不需要 API key**。
+    ///
+    /// 结果用同一套回投机制（[`post_ai_reply`]）送回，标题为「二维码」。
+    fn submit_qr(&mut self, image: RgbaImage) {
+        self.ai_title = "二维码".to_string();
+        self.ai_reply = None;
+        self.ai_pending = true;
+        self.dirty = true;
+        if let Some(h) = self.qr_handler.as_ref() {
+            h(image);
+        } else {
+            self.ai_reply = Some(AiReply::Error("本机没有可用的二维码解码器".into()));
             self.ai_pending = false;
         }
     }
@@ -1315,6 +1582,24 @@ impl OverlayState {
             }
         }
         self.ai_reply = Some(reply);
+        self.dirty = true;
+    }
+
+    /// 应用「窗口选择器」的结果：把选区切到用户选中的那个窗口。
+    ///
+    /// `region` 是**背景帧内**的物理像素矩形。
+    fn apply_window_picked(&mut self, region: Rect) {
+        if region.is_empty() {
+            return;
+        }
+        let logical = self.i2l(region);
+        if logical.w < 2 || logical.h < 2 {
+            return;
+        }
+        self.selection = Some(logical);
+        self.erase_mode = false;
+        self.mode = Mode::Edit;
+        self.relayout_toolbar();
         self.dirty = true;
     }
 
@@ -1507,6 +1792,13 @@ unsafe extern "system" fn overlay_wnd_proc(
                 // 接管堆上的回复（谁投递谁负责释放，这里 Box::from_raw 接管）
                 let boxed = Box::from_raw(lp.0 as *mut AiReply);
                 st.apply_ai_reply(*boxed);
+            }
+            return LRESULT(0);
+        }
+        WM_WINDOW_PICKED => {
+            if lp.0 != 0 {
+                let boxed = Box::from_raw(lp.0 as *mut Rect);
+                st.apply_window_picked(*boxed);
             }
             return LRESULT(0);
         }

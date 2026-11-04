@@ -12,14 +12,15 @@ pub mod gdiplus;
 pub mod render;
 
 mod aipanel;
+mod colorpanel;
 mod overlay;
 mod pin;
 mod toolbar;
 mod win;
 
 pub use overlay::{
-    post_ai_reply, AiReply, AiRequest, MosaicRect, Overlay, OverlayAction, OverlayConfig,
-    OverlayOutcome, WM_AI_REPLY,
+    post_ai_reply, post_window_picked, AiReply, AiRequest, MosaicRect, Overlay, OverlayAction,
+    OverlayConfig, OverlayOutcome, WM_AI_REPLY, WM_WINDOW_PICKED,
 };
 pub use pin::PinWindow;
 pub use render::render_annotations;

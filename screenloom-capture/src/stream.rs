@@ -26,7 +26,6 @@ use windows::Graphics::Capture::{
 };
 use windows::Graphics::DirectX::DirectXPixelFormat;
 use windows::Graphics::SizeInt32;
-use windows::Win32::Foundation::HWND;
 
 use screenloom_core::{Error, Result};
 
@@ -49,7 +48,8 @@ pub struct BgraFrame {
 pub struct ScreenStream {
     // ↓ 声明顺序 = 析构顺序：WinRT 对象必须先于 backend（内含套间守卫）释放。
     pool: Direct3D11CaptureFramePool,
-    session: GraphicsCaptureSession,
+    /// 捕获会话。必须**保持存活**，否则捕获会停；用 `_` 前缀表示「只为持有」。
+    _session: GraphicsCaptureSession,
     _handler: TypedEventHandler<Direct3D11CaptureFramePool, IInspectable>,
     /// 有新帧到达时置位。
     dirty: Arc<AtomicBool>,
@@ -110,7 +110,7 @@ impl ScreenStream {
 
         Ok(ScreenStream {
             pool,
-            session,
+            _session: session,
             _handler: handler,
             dirty,
             size,
@@ -120,7 +120,7 @@ impl ScreenStream {
 
     /// 帧尺寸（物理像素）。
     pub fn size(&self) -> (u32, u32) {
-        (self.size.Width, self.size.Height)
+        (self.size.Width as u32, self.size.Height as u32)
     }
 
     /// 取**最新**一帧；积压的旧帧直接丢弃。
