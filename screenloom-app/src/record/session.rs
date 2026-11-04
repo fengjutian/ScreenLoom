@@ -22,6 +22,7 @@ use std::time::{Duration, Instant};
 
 use screenloom_core::{bgra_to_nv12_into, nv12_bytes_len, Error, Result};
 
+use super::audio::AudioCapture;
 use super::encoder::VideoEncoder;
 use super::pacer::FramePacer;
 use super::paths::RecordPaths;
@@ -280,16 +281,29 @@ fn run_worker(
         }
     };
 
-    // ---- 初始化：磁盘 → 帧源 → 编码器 ----
-    let init = (|| -> Result<(FrameSource, VideoEncoder)> {
+    // ---- 初始化：磁盘 → 帧源 → 音频 → 编码器 ----
+    let init = (|| -> Result<(FrameSource, VideoEncoder, Option<AudioCapture>)> {
         check_free_space(paths.partial.parent())?;
         let stream = FrameSource::open(opts.target, opts.fps, opts.cursor)?;
+        // 先起音频：编码器需要知道是否加 AAC 流。
+        let audio = if opts.audio_system {
+            Some(AudioCapture::start_system()?)
+        } else {
+            None
+        };
         let (w, h) = stream.size();
-        let enc = VideoEncoder::new(&paths.partial, w, h, opts.fps, opts.bitrate)?;
-        Ok((stream, enc))
+        let enc = VideoEncoder::new_with_audio(
+            &paths.partial,
+            w,
+            h,
+            opts.fps,
+            opts.bitrate,
+            audio.is_some(),
+        )?;
+        Ok((stream, enc, audio))
     })();
 
-    let (mut stream, mut enc) = match init {
+    let (mut stream, mut enc, audio) = match init {
         Ok(v) => {
             let _ = init_tx.send(Ok(()));
             v
@@ -313,6 +327,11 @@ fn run_worker(
 
     stats.set_phase(Phase::Recording);
 
+    // 丢弃初始化/倒计时期间积压的音频，视频从 0 开始时音频也从 0 开始。
+    if let Some(a) = &audio {
+        let _ = a.drain();
+    }
+
     // ---- 录制循环 ----
     let (w, h) = stream.size();
     let mut nv12 = vec![0u8; nv12_bytes_len(w, h)];
@@ -324,6 +343,8 @@ fn run_worker(
     let mut frames = 0u64;
     let mut last_stat = Instant::now();
     let mut reason = StopReason::User;
+    // 音频时间轴：48 kHz 立体声，pts 单位 100ns。
+    let mut audio_pts = 0i64;
 
     loop {
         if control.is_stopped() {
@@ -342,12 +363,17 @@ fn run_worker(
             );
             // 暂停期间也要刷新心跳，否则看门狗会把"暂停很久"误判成卡死。
             stats.touch();
+            // 暂停期间的音频直接丢掉，成片不包含暂停时间。
+            if let Some(a) = &audio {
+                let _ = a.drain();
+            }
             std::thread::sleep(PAUSED_POLL);
             continue;
         } else if let Some(t) = paused_at.take() {
             // 暂停时间从成片时间轴里剔除：恢复时把写帧节奏重新对齐到当前时刻。
             paused_total += now.saturating_duration_since(t);
             pacer.rebase(now);
+            audio_pts = pacer.pts();
             stats.set_phase(Phase::Recording);
         }
 
@@ -381,6 +407,22 @@ fn run_worker(
                 }
                 frames += 1;
                 stats.set_frames(frames);
+
+                // 音频跟随视频帧写入，并且**只写到视频当前时间**：
+                // 音频 pts 一旦跑到视频前面，默认节流的 SinkWriter 会让视频样本迟到并被丢。
+                if let Some(a) = &audio {
+                    let ahead = (pts - audio_pts).max(0);
+                    let want_samples = (ahead as u128 * 48_000 / 10_000_000) as usize * 2;
+                    let pcm = a.drain_up_to(want_samples);
+                    if !pcm.is_empty() {
+                        if let Err(e) = enc.write_audio(&pcm, audio_pts) {
+                            reason = StopReason::EncoderError;
+                            eprintln!("录屏写音频失败: {e}");
+                            break;
+                        }
+                        audio_pts += (pcm.len() as i64 / 2) * 10_000_000 / 48_000;
+                    }
+                }
                 stats.set_stage(Stage::Capture);
             }
         }
@@ -423,6 +465,15 @@ fn run_worker(
     // ---- 收尾：无论成功/失败/放弃，都必须 Finalize ----
     stats.set_phase(Phase::Stopping);
     let active = start.elapsed().saturating_sub(paused_total);
+    // 把音频追到视频时间轴（不写超过视频末尾，避免成片多出无声尾巴）。
+    if let Some(a) = &audio {
+        let ahead = (pacer.pts() - audio_pts).max(0);
+        let want_samples = (ahead as u128 * 48_000 / 10_000_000) as usize * 2;
+        let pcm = a.drain_up_to(want_samples);
+        if !pcm.is_empty() {
+            let _ = enc.write_audio(&pcm, audio_pts);
+        }
+    }
     if !control.discard.load(Ordering::Acquire) && have_frame {
         stats.set_stage(Stage::Tail);
         for _ in 0..TAIL_PADDING_FRAMES {

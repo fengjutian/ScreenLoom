@@ -81,6 +81,18 @@ impl AudioCapture {
         q.drain(..).collect()
     }
 
+    /// 最多取走 `max_samples` 个 i16（立体声交错，必须是偶数）。
+    ///
+    /// 录制主循环用这个把音频限制在视频时间轴内，避免音频 pts 跑到视频前面
+    /// 导致 SinkWriter 把迟到的视频帧丢掉。
+    pub fn drain_up_to(&self, max_samples: usize) -> Vec<i16> {
+        let Ok(mut q) = self.buffer.lock() else {
+            return Vec::new();
+        };
+        let n = max_samples.min(q.len());
+        q.drain(..n).collect()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.buffer.lock().map(|q| q.is_empty()).unwrap_or(true)
     }
