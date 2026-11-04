@@ -1,0 +1,21 @@
+[package]
+name = "mf-probe"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+windows = { version = "0.61", features = [
+    "Foundation",
+    "Media",
+    "Media_Audio",
+    "Media_Capture",
+    "Media_Core",
+    "Media_Effects",
+    "Media_MediaProperties",
+    "Media_Playback",
+    "Media_Streaming",
+    "Media_Transcoding",
+    "Win32_System_Com",
+] }

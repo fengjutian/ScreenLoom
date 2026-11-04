@@ -1,0 +1,9 @@
+# Cargo 构建产物
+/target/
+
+# E2E 运行时留证（体积大，且可由 scripts/ 重新生成）
+/e2e_out/
+
+# 临时文件
+*.tmp
+*.log

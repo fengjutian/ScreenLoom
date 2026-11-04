@@ -231,6 +231,13 @@ fn main() {
     // 主题覆盖文件（`--theme PATH`）：给路径就热重载配色 / 圆角
     theme::set_override_path(args.theme_path.clone());
 
+    // 旧版配置目录（改名前）如有配置且新版缺失，则自动迁移一份过来。
+    if args.cfg_path.is_none() {
+        if let Some(migrated) = screenloom_core::Config::migrate_legacy_config() {
+            eprintln!("已从旧版配置目录迁移配置: {}", migrated.display());
+        }
+    }
+
     let cfg_path = args
         .cfg_path
         .clone()

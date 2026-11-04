@@ -1,4 +1,4 @@
-//! 配置：极简 `key=value` 文本格式，避免引入序列化依赖。
+﻿//! 配置：极简 `key=value` 文本格式，避免引入序列化依赖。
 //!
 //! 对齐微信侧的同类开关：`gScreenshotShortcutKey`、`gScreenShotHideWindow`、
 //! `clicfg_pc_screenshot_toolbar_collapse`、`longscreenshot_use_grabwindow` 等。
@@ -192,7 +192,10 @@ impl Config {
         appdata_dir().join("screenloom").join("config.txt")
     }
 
-    /// 旧版配置目录名（项目改名前）。仅用于一次性迁移。
+    /// 旧版配置目录名（项目改名前的旧名）。
+    ///
+    /// 仅用于**一次性迁移**：这里必须是旧目录的真实名字，才能找到旧配置文件，
+    /// 所以这里是**全仓唯一保留旧名字面量的地方**（其余所有代码/文档/脚本均已改名）。
     const LEGACY_DIR: &'static str = "weshot";
 
     /// 若存在旧版配置而新版缺失，则复制过来（**保留旧文件作备份**）。

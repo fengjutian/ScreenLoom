@@ -1,11 +1,12 @@
 # screenloom —— 微信 4.x 截图工具的 Rust 复刻
 
-微信 PC 4.x（`Weixin.dll` 的 `screenloom` 命名空间）截图工具的独立复刻实现。
+微信 PC 4.x（`Weixin.dll` 内的 `wx::` 命名空间）截图工具的独立复刻实现。
 Windows 专用，Rust 2021。
 
-> **命名说明**：项目内部沿用 `screenloom` 这个名字（含 crate 名、二进制名、`screenloom_core::screenloom` 内部命名空间）。
-> `wx::` 同时也是**微信原版**的内部命名空间 —— 两者无关，改名时不要误伤。
-> 改名脚本已备好但**尚未执行**：`doc/scripts/rename_to_screenshot.ps1`。
+> **命名说明**：项目名为 `screenloom`（crate 前缀 `screenloom-*`、Rust 模块 `screenloom_*`、
+> 二进制 `screenloom.exe`、窗口类名 `Screenloom*Window`）。
+> 文档中出现的 `wx::` 是**微信原版**内部命名空间的**文档别名**（本项目与微信的命名空间无关，
+> 两者不要混淆）；取证脚本 `doc/scripts/scan_wechat_shot.py` 用十六进制常量按真实字节检索该命名空间。
 
 ---
 
