@@ -64,8 +64,6 @@ pub struct Config {
     pub record_bitrate: u32,
     /// 是否录制鼠标指针
     pub record_cursor: bool,
-    /// 是否录制系统声音（WASAPI loopback）
-    pub record_audio_system: bool,
     /// 开始录制前的倒计时（秒，0 = 不等待）
     pub record_countdown: u32,
     /// 是否显示 REC HUD
@@ -108,7 +106,6 @@ impl Default for Config {
             record_fps: 30,
             record_bitrate: 8_000_000,
             record_cursor: true,
-            record_audio_system: false,
             record_countdown: 3,
             record_show_hud: true,
             record_open_folder: true,
@@ -183,9 +180,6 @@ impl Config {
                 "record_cursor" => {
                     cfg.record_cursor = parse_bool(v).unwrap_or(cfg.record_cursor)
                 }
-                "record_audio_system" => {
-                    cfg.record_audio_system = parse_bool(v).unwrap_or(cfg.record_audio_system)
-                }
                 "record_countdown" => {
                     cfg.record_countdown = v.parse().unwrap_or(cfg.record_countdown)
                 }
@@ -240,7 +234,6 @@ impl Config {
              record_fps = {}\n\
              record_bitrate = {}\n\
              record_cursor = {}\n\
-             record_audio_system = {}\n\
              record_countdown = {}\n\
              record_show_hud = {}\n\
              record_open_folder = {}\n\
@@ -274,7 +267,6 @@ impl Config {
             self.record_fps,
             self.record_bitrate,
             self.record_cursor,
-            self.record_audio_system,
             self.record_countdown,
             self.record_show_hud,
             self.record_open_folder,

@@ -14,7 +14,6 @@
 //!
 //! 帧率策略与 MF 踩坑见 `doc/录屏方案.md`；需求与验收见 `doc/录屏功能需求.md`。
 
-pub mod audio;
 pub mod controller;
 pub mod encoder;
 pub mod hud;
@@ -61,8 +60,6 @@ pub struct RecordOptions {
     pub countdown: Duration,
     /// 是否把鼠标指针录进画面。
     pub cursor: bool,
-    /// 是否录制系统声音。
-    pub audio_system: bool,
     /// 最大文件大小；`None` = 不限。
     pub max_bytes: Option<u64>,
 }
@@ -78,7 +75,6 @@ impl RecordOptions {
             duration: None,
             countdown: Duration::ZERO,
             cursor: true,
-            audio_system: false,
             max_bytes: None,
         })
     }
@@ -99,7 +95,6 @@ impl RecordOptions {
             duration: None,
             countdown: Duration::from_secs(cfg.record_countdown.min(10) as u64),
             cursor: cfg.record_cursor,
-            audio_system: cfg.record_audio_system,
             max_bytes: None,
         })
     }

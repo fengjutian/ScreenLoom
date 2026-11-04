@@ -75,6 +75,12 @@ pub struct Theme {
     pub focus_ring: u32,
     /// 纯白（对勾）。
     pub white: u32,
+    /// 滚动条轨道。
+    pub scroll_track: u32,
+    /// 滚动条滑块。
+    pub scroll_thumb: u32,
+    /// 滚动条滑块 - 悬停 / 拖动。
+    pub scroll_thumb_hover: u32,
 
     // ---- 圆角（逻辑像素）----
     /// 面板圆角。
@@ -87,6 +93,8 @@ pub struct Theme {
     pub radius_menu: f32,
     /// 复选框圆角。
     pub radius_check: f32,
+    /// 滚动条滑块圆角。
+    pub radius_scroll: f32,
 }
 
 impl Theme {
@@ -115,12 +123,16 @@ impl Theme {
         menu_border: 0xFF3C_444F,
         focus_ring: 0xFF07_C160,
         white: 0xFF_FF_FF_FF,
+        scroll_track: 0x14FF_FFFF,
+        scroll_thumb: 0x40FF_FFFF,
+        scroll_thumb_hover: 0x66FF_FFFF,
 
         radius_panel: 9.0,
         radius_field: 6.0,
         radius_btn: 6.0,
         radius_menu: 8.0,
         radius_check: 4.0,
+        radius_scroll: 3.0,
     };
 }
 
@@ -240,13 +252,15 @@ fn apply_json(t: &mut Theme, v: &serde_json::Value) -> usize {
 fn apply_one(t: &mut Theme, key: &str, val: &serde_json::Value) -> bool {
     match key {
         // ---- 圆角（逻辑像素）----
-        "radius_panel" | "radius_field" | "radius_btn" | "radius_menu" | "radius_check" => {
+        "radius_panel" | "radius_field" | "radius_btn" | "radius_menu" | "radius_check"
+        | "radius_scroll" => {
             let Some(r) = val.as_f64() else { return false };
             match key {
                 "radius_panel" => t.radius_panel = r as f32,
                 "radius_field" => t.radius_field = r as f32,
                 "radius_btn" => t.radius_btn = r as f32,
                 "radius_menu" => t.radius_menu = r as f32,
+                "radius_scroll" => t.radius_scroll = r as f32,
                 _ => t.radius_check = r as f32,
             }
             true
@@ -280,6 +294,9 @@ fn apply_one(t: &mut Theme, key: &str, val: &serde_json::Value) -> bool {
                 "menu_border" => t.menu_border = c,
                 "focus_ring" => t.focus_ring = c,
                 "white" => t.white = c,
+                "scroll_track" => t.scroll_track = c,
+                "scroll_thumb" => t.scroll_thumb = c,
+                "scroll_thumb_hover" => t.scroll_thumb_hover = c,
                 _ => return false,
             }
             true
@@ -341,6 +358,14 @@ impl Rect {
     /// 点是否落在矩形内（左闭右开）。
     pub fn contains(&self, x: i32, y: i32) -> bool {
         x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
+    }
+
+    /// 两个矩形是否相交（面积 > 0）。
+    pub fn intersects(&self, other: &Rect) -> bool {
+        self.x < other.right()
+            && other.x < self.right()
+            && self.y < other.bottom()
+            && other.y < self.bottom()
     }
 }
 
@@ -584,6 +609,35 @@ pub fn focus_ring(g: &mut Graphics, r: Rect, k: f32) {
         t.focus_ring,
         pfx(1.4, k),
     );
+}
+
+/// 滚动条：轨道 + 滑块。`thumb` 为 `None` 时只画轨道（内容不溢出就不会调用）。
+pub fn scrollbar(g: &mut Graphics, track: Rect, thumb: Option<Rect>, active: bool, k: f32) {
+    let t = current();
+    let radius = pfx(t.radius_scroll, k);
+    g.fill_round_rect(
+        track.x as f32,
+        track.y as f32,
+        track.w as f32,
+        track.h as f32,
+        track.w as f32 / 2.0,
+        t.scroll_track,
+    );
+    if let Some(th) = thumb {
+        let color = if active {
+            t.scroll_thumb_hover
+        } else {
+            t.scroll_thumb
+        };
+        g.fill_round_rect(
+            th.x as f32,
+            th.y as f32,
+            th.w as f32,
+            th.h as f32,
+            radius,
+            color,
+        );
+    }
 }
 
 /// 下拉菜单（自绘，独立的弹出窗口用）。

@@ -28,20 +28,17 @@ pub(crate) fn register_popup_class() -> Result<()> {
 
 /// 打开某个下拉框。
 pub(crate) fn open_combo(st: &mut State, field: Field) {
-    let items = combo_items(field);
+    // 复制一份候选项：菜单打开期间表单可能已经换成新的（不会，但保持简单）
+    let items = st.choice_items(field).to_vec();
     if items.is_empty() {
         return;
     }
-    // 找到控件矩形
-    let mut ctrl = None;
-    for row in &st.layout.rows {
-        for wg in &row.widgets {
-            if wg.field == field && wg.kind == Kind::Combo {
-                ctrl = Some(wg.rect);
-            }
-        }
-    }
-    let Some(ctrl) = ctrl else { return };
+    let selected = st.choice_of(field);
+    // 控件矩形（内容坐标）→ 客户区坐标
+    let Some(r) = st.layout.widget_rect(field) else {
+        return;
+    };
+    let ctrl = Rect::new(r.x, r.y - st.scroll.y, r.w, r.h);
 
     let k = st.k;
     let item_h = px(MENU_ITEM_H, k);
@@ -71,7 +68,7 @@ pub(crate) fn open_combo(st: &mut State, field: Field) {
     st.combo = Some(ComboState {
         field,
         items,
-        selected: st.combos.get(&field).copied().unwrap_or(0),
+        selected,
         hover: None,
     });
 
@@ -134,7 +131,12 @@ pub(crate) fn close_combo(st: &mut State) {
 }
 
 /// 下拉菜单窗口过程。
-pub(crate) unsafe extern "system" fn popup_wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+pub(crate) unsafe extern "system" fn popup_wnd_proc(
+    hwnd: HWND,
+    msg: u32,
+    wp: WPARAM,
+    lp: LPARAM,
+) -> LRESULT {
     if msg == WM_NCCREATE {
         let cs = lp.0 as *const CREATESTRUCTW;
         if !cs.is_null() {
@@ -159,7 +161,8 @@ pub(crate) unsafe extern "system" fn popup_wnd_proc(hwnd: HWND, msg: u32, wp: WP
                 if let Some(c) = &st.combo {
                     let r = Rect::new(0, 0, w, h);
                     let item_h = px(MENU_ITEM_H, st.k);
-                    theme::menu(&mut g, r, c.items, c.selected, c.hover, item_h, st.k);
+                    let refs: Vec<&str> = c.items.iter().map(String::as_str).collect();
+                    theme::menu(&mut g, r, &refs, c.selected, c.hover, item_h, st.k);
                 }
             }
             let _ = EndPaint(hwnd, &ps);
@@ -190,7 +193,7 @@ pub(crate) unsafe extern "system" fn popup_wnd_proc(hwnd: HWND, msg: u32, wp: WP
         }
         WM_KILLFOCUS => {
             unsafe {
-                let _ = PostMessageW(Some(st.hwnd), WM_APP_COMBO_CLOSED, WPARAM(0), LPARAM(0));
+                let _ = PostMessageW(Some(st.hwnd), WM_APP_COMBO_CLOSE, WPARAM(0), LPARAM(0));
             }
             return LRESULT(0);
         }

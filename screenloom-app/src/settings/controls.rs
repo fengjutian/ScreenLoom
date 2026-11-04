@@ -1,4 +1,4 @@
-//! 原生子控件：`EDIT` / `BUTTON` 的创建、字体、文本读写与子类化窗口过程。
+//! 原生子控件：`EDIT` / `BUTTON` 的创建、字体、文本读写、位置同步与子类化窗口过程。
 
 use super::*;
 
@@ -7,36 +7,101 @@ pub(crate) fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-pub(crate) fn build_controls(parent: HWND, st: &mut State, k: f32) {
-    let font = make_font(k);
+pub(crate) fn build_controls(parent: HWND, st: &mut State) {
+    let font = make_font(st.k);
     let state_ptr = &mut *st as *mut State;
 
     // 输入框（保持**创建顺序** = 字段顺序，端到端脚本按下标取控件）
+    let mut edits: Vec<(Field, Rect, bool)> = Vec::new();
     for row in &st.layout.rows {
         for wg in &row.widgets {
-            if matches!(wg.kind, Kind::Edit | Kind::Password) {
-                let h = create_edit(parent, wg.rect, wg.kind == Kind::Password, font, k);
-                st.edits.insert(wg.field, h);
-                unsafe {
-                    let _ = SetWindowSubclass(h, Some(child_subclass), 1, 0);
-                }
+            match wg.kind {
+                Kind::Edit => edits.push((wg.field, wg.rect, false)),
+                Kind::Password => edits.push((wg.field, wg.rect, true)),
+                _ => {}
             }
+        }
+    }
+    for (field, rect, password) in edits {
+        let h = create_edit(parent, rect, password, font, st.k);
+        st.edits.insert(field, h);
+        unsafe {
+            let _ = SetWindowSubclass(h, Some(child_subclass), 1, 0);
         }
     }
 
     // 行尾按钮（「浏览…」）
+    let mut trailing: Vec<(usize, &'static str, Rect)> = Vec::new();
     for row in &st.layout.rows {
-        if let Some((id, text, rect)) = &row.trailing {
-            let h = create_button(parent, text, *rect, *id, font, state_ptr);
-            st.buttons.insert(*id, h);
+        if let Some(t) = row.trailing {
+            trailing.push(t);
         }
     }
+    for (id, text, rect) in trailing {
+        let h = create_button(parent, text, rect, id, font, state_ptr);
+        st.buttons.insert(id, h);
+    }
 
-    // 底部按钮
+    // 底部按钮（固定，不随滚动）
     let save = create_button(parent, "保存", st.layout.save, ID_SAVE, font, state_ptr);
     st.buttons.insert(ID_SAVE, save);
     let cancel = create_button(parent, "取消", st.layout.cancel, ID_CANCEL, font, state_ptr);
     st.buttons.insert(ID_CANCEL, cancel);
+}
+
+/// 把子控件摆到「内容坐标 + 滚动偏移」处。
+///
+/// 用 `BeginDeferWindowPos` 批量移动，避免逐个 `SetWindowPos` 的中间态闪烁。
+/// 底栏按钮位置固定，不参与。
+pub(crate) fn sync_children(st: &State) {
+    let dy = -st.scroll.y;
+
+    let mut jobs: Vec<(HWND, Rect)> = Vec::new();
+    for (field, hwnd) in &st.edits {
+        if let Some(r) = st.layout.widget_rect(*field) {
+            jobs.push((*hwnd, r));
+        }
+    }
+    for row in &st.layout.rows {
+        if let Some((id, _, r)) = row.trailing {
+            if let Some(hwnd) = st.buttons.get(&id) {
+                jobs.push((*hwnd, r));
+            }
+        }
+    }
+
+    unsafe {
+        if let Ok(mut hdwp) = BeginDeferWindowPos(jobs.len() as i32) {
+            for (hwnd, r) in &jobs {
+                match DeferWindowPos(
+                    hdwp,
+                    *hwnd,
+                    None,
+                    r.x,
+                    r.y + dy,
+                    r.w,
+                    r.h,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                ) {
+                    Ok(next) => hdwp = next,
+                    Err(_) => return,
+                }
+            }
+            let _ = EndDeferWindowPos(hdwp);
+        } else {
+            for (hwnd, r) in &jobs {
+                let _ = SetWindowPos(
+                    *hwnd,
+                    None,
+                    r.x,
+                    r.y + dy,
+                    r.w,
+                    r.h,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+        }
+    }
 }
 
 /// 文本输入框。
@@ -249,6 +314,12 @@ pub(crate) unsafe extern "system" fn child_subclass(
                 return LRESULT(0);
             }
         }
+        // 滚轮转给宿主：单行 EDIT 自己不会滚，别让它把消息吃掉。
+        WM_MOUSEWHEEL => {
+            let parent = GetParent(hwnd).unwrap_or_default();
+            let _ = PostMessageW(Some(parent), WM_MOUSEWHEEL, wp, lp);
+            return LRESULT(0);
+        }
         WM_SETFOCUS | WM_KILLFOCUS => {
             let parent = GetParent(hwnd).unwrap_or_default();
             let _ = PostMessageW(Some(parent), WM_APP_REDRAW, WPARAM(0), LPARAM(0));
@@ -397,21 +468,13 @@ pub(crate) unsafe extern "system" fn flat_button_proc(
     DefWindowProcW(hwnd, msg, wp, lp)
 }
 
-/// 字段对应的控件类型。
-pub(crate) fn kind_of(st: &State, field: Field) -> Kind {
-    for row in &st.layout.rows {
-        for wg in &row.widgets {
-            if wg.field == field {
-                return wg.kind;
-            }
-        }
-    }
-    Kind::Edit
-}
-
 /// 移动焦点（dir = +1 / -1）。
 pub(crate) fn move_focus(st: &mut State, dir: i32) {
-    let n = FOCUS_ITEMS.len() as i32;
+    let items = st.form.focus_items();
+    let n = items.len() as i32;
+    if n == 0 {
+        return;
+    }
     let cur = focus_index(st).map(|v| v as i32).unwrap_or(-1);
     let mut next = cur + dir;
     if next < 0 {

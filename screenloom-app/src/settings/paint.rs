@@ -1,4 +1,6 @@
-//! 设置窗口的自绘：窗口底色、分组面板、输入框外框、复选框、下拉框与焦点环。
+//! 设置窗口的自绘：窗口底色、分组面板、输入框外框、复选框、下拉框、滚动条与焦点环。
+//!
+//! 所有几何都是**内容坐标**；绘制时统一加上 `-scroll.y` 并裁剪到视口。
 
 use super::*;
 
@@ -52,6 +54,11 @@ pub(crate) fn client_size(hwnd: HWND) -> (i32, i32) {
     (r.right - r.left, r.bottom - r.top)
 }
 
+/// 内容坐标 → 屏幕（客户区）坐标。
+pub(crate) fn shift(r: Rect, dy: i32) -> Rect {
+    Rect::new(r.x, r.y + dy, r.w, r.h)
+}
+
 /// 画整个界面（双缓冲）。
 pub(crate) fn paint(hwnd: HWND, st: &State) {
     let mut ps = PAINTSTRUCT::default();
@@ -90,15 +97,30 @@ pub(crate) fn paint(hwnd: HWND, st: &State) {
 /// 画界面内容（不含原生按钮 —— 那些走 owner-draw）。
 pub(crate) fn draw_scene(g: &mut Graphics, st: &State, w: i32, h: i32) {
     let k = st.k;
+    let viewport = st.layout.viewport;
+    let dy = -st.scroll.y;
+
     g.fill_rect(0.0, 0.0, w as f32, h as f32, theme::current().bg);
+
+    // 滚动区裁剪：内容不会画到底栏上
+    g.clip_rect(
+        viewport.x as f32,
+        viewport.y as f32,
+        viewport.w as f32,
+        viewport.h as f32,
+    );
 
     // 分组面板 + 标题
     for p in &st.layout.panels {
-        theme::panel(g, p.rect, k);
+        let r = shift(p.rect, dy);
+        if !r.intersects(&viewport) {
+            continue;
+        }
+        theme::panel(g, r, k);
         theme::section_header(
             g,
-            p.rect.x + px(PANEL_PAD_X, k),
-            p.rect.y + px(PANEL_PAD_TOP, k),
+            r.x + px(PANEL_PAD_X, k),
+            r.y + px(PANEL_PAD_TOP, k),
             p.title,
             p.note,
             k,
@@ -108,13 +130,23 @@ pub(crate) fn draw_scene(g: &mut Graphics, st: &State, w: i32, h: i32) {
     // 行
     let focused_edit = focused_edit(st);
     for row in &st.layout.rows {
+        let label_rect = shift(row.label_rect, dy);
+        let row_visible = label_rect.intersects(&viewport);
+        if !row_visible
+            && row
+                .widgets
+                .iter()
+                .all(|wg| !shift(wg.hit, dy).intersects(&viewport))
+        {
+            continue;
+        }
+
         if !row.label.is_empty() {
             let f = px(13, k) as f32;
             let (_, th) = g.measure_text(row.label, f, false);
-            let ty =
-                row.label_rect.y as f32 + (row.label_rect.h as f32 - th) / 2.0 - px(1, k) as f32;
+            let ty = label_rect.y as f32 + (label_rect.h as f32 - th) / 2.0 - px(1, k) as f32;
             g.draw_text(
-                row.label_rect.x as f32,
+                label_rect.x as f32,
                 ty,
                 row.label,
                 f,
@@ -123,29 +155,31 @@ pub(crate) fn draw_scene(g: &mut Graphics, st: &State, w: i32, h: i32) {
             );
         }
         for wg in &row.widgets {
+            let r = shift(wg.rect, dy);
             match wg.kind {
                 Kind::Edit | Kind::Password => {
                     let focused = focused_edit == Some(wg.field);
                     let hovered = st.hover_field == Some(wg.field);
-                    theme::input_frame(g, wg.rect, focused, hovered, k);
+                    theme::input_frame(g, r, focused, hovered, k);
                 }
                 Kind::Check => {
-                    let on = *st.checks.get(&wg.field).unwrap_or(&false);
+                    let on = st.bool_of(wg.field);
                     let hov = st.hover_field == Some(wg.field);
-                    theme::checkbox(g, wg.rect.x, wg.rect.y, wg.rect.w, on, hov, k);
+                    theme::checkbox(g, r.x, r.y, r.w, on, hov, k);
                     // 文字
                     let f = px(13, k) as f32;
-                    let tx = wg.rect.right() + px(8, k);
+                    let tx = r.right() + px(8, k);
                     let (_, th) = g.measure_text(wg.text, f, false);
-                    let ty = wg.rect.y as f32 + (wg.rect.h as f32 - th) / 2.0 - px(1, k) as f32;
+                    let ty = r.y as f32 + (r.h as f32 - th) / 2.0 - px(1, k) as f32;
                     g.draw_text(tx as f32, ty, wg.text, f, theme::current().text, false);
                     if st.focus_field == Some(wg.field) {
-                        theme::focus_ring(g, wg.hit, k);
+                        theme::focus_ring(g, shift(wg.hit, dy), k);
                     }
                 }
                 Kind::Combo => {
-                    let sel = st.combos.get(&wg.field).copied().unwrap_or(0);
-                    let text = combo_items(wg.field).get(sel).copied().unwrap_or("");
+                    let sel = st.choice_of(wg.field);
+                    let items = st.choice_items(wg.field);
+                    let text = items.get(sel).map(String::as_str).unwrap_or("");
                     let open = st
                         .combo
                         .as_ref()
@@ -153,7 +187,7 @@ pub(crate) fn draw_scene(g: &mut Graphics, st: &State, w: i32, h: i32) {
                         .unwrap_or(false);
                     theme::combo_box(
                         g,
-                        wg.rect,
+                        r,
                         text,
                         open,
                         st.hover_field == Some(wg.field),
@@ -164,6 +198,20 @@ pub(crate) fn draw_scene(g: &mut Graphics, st: &State, w: i32, h: i32) {
             }
         }
     }
+
+    g.clear_clip();
+    draw_scrollbar(g, st);
+}
+
+/// 滚动条：内容不溢出时不画。
+fn draw_scrollbar(g: &mut Graphics, st: &State) {
+    if !st.scroll.overflows() {
+        return;
+    }
+    let track = st.layout.scrollbar;
+    let thumb = st.scroll.thumb(track, st.k);
+    let active = st.scroll.hover || st.scroll.drag.is_some();
+    theme::scrollbar(g, track, thumb, active, st.k);
 }
 
 /// 当前获得键盘焦点的输入框字段。
@@ -177,11 +225,15 @@ pub(crate) fn focused_edit(st: &State) -> Option<Field> {
 
 // ---------------------------------------------------------------- 命中测试
 
-/// 命中一个自绘控件。
+/// 命中一个自绘控件（鼠标坐标是客户区坐标，需要换算到内容坐标）。
 pub(crate) fn hit_widget(st: &State, x: i32, y: i32) -> Option<Field> {
+    if !st.layout.viewport.contains(x, y) {
+        return None;
+    }
+    let cy = y + st.scroll.y;
     for row in &st.layout.rows {
         for wg in &row.widgets {
-            if matches!(wg.kind, Kind::Check | Kind::Combo) && wg.hit.contains(x, y) {
+            if matches!(wg.kind, Kind::Check | Kind::Combo) && wg.hit.contains(x, cy) {
                 return Some(wg.field);
             }
         }
@@ -191,27 +243,29 @@ pub(crate) fn hit_widget(st: &State, x: i32, y: i32) -> Option<Field> {
 
 // ---------------------------------------------------------------- 焦点
 
-/// 当前焦点项在 FOCUS_ITEMS 里的下标。
+/// 当前焦点项在焦点顺序里的下标。
 pub(crate) fn focus_index(st: &State) -> Option<usize> {
+    let items = st.form.focus_items();
     if let Some(f) = st.focus_field {
-        return FOCUS_ITEMS.iter().position(|i| *i == FocusItem::Field(f));
+        return items.iter().position(|i| *i == FocusItem::Field(f));
     }
     if let Some(id) = st.focus_button {
-        return FOCUS_ITEMS.iter().position(|i| *i == FocusItem::Button(id));
+        return items.iter().position(|i| *i == FocusItem::Button(id));
     }
     let h = unsafe { GetFocus() };
     if h.0.is_null() {
         return None;
     }
-    FOCUS_ITEMS.iter().position(|item| match item {
+    items.iter().position(|item| match item {
         FocusItem::Field(f) => st.edits.get(f) == Some(&h),
         FocusItem::Button(id) => st.buttons.get(id) == Some(&h),
     })
 }
 
-/// 把焦点移到第 idx 项。
+/// 把焦点移到第 idx 项；焦点控件不在视口里时自动滚进来。
 pub(crate) fn focus_to(st: &mut State, idx: usize) {
-    let item = match FOCUS_ITEMS.get(idx) {
+    let items = st.form.focus_items();
+    let item = match items.get(idx) {
         Some(i) => *i,
         None => return,
     };
@@ -227,6 +281,11 @@ pub(crate) fn focus_to(st: &mut State, idx: usize) {
                 st.focus_field = Some(f);
                 unsafe {
                     let _ = SetFocus(Some(st.hwnd));
+                }
+            }
+            if let Some(r) = st.layout.widget_rect(f) {
+                if st.scroll.ensure_visible(r, st.k) {
+                    sync_children(st);
                 }
             }
         }

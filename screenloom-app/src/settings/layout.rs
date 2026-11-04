@@ -1,6 +1,7 @@
-//! 设置的**静态模型**与**布局计算**：字段定义、分组/行/控件常量、几何与 `compute_layout`。
+//! 设置的**几何布局**：由 [`Form`] 算出面板 / 行 / 控件矩形，以及视口与滚动条。
 //!
-//! 纯数据 + 纯算术，不碰 Win32（只用到 `Rect` 与 [`px`]）。
+//! 纯数据 + 纯算术，不碰 Win32（只用到 [`Rect`] 与 [`px`]）。
+//! 所有坐标都是**内容坐标**（`y` 从 0 起）；滚动由 `scroll.rs` 施加偏移。
 
 use super::*;
 
@@ -28,7 +29,7 @@ pub(crate) const SECTION_GAP: i32 = 12;
 pub(crate) const LABEL_W: i32 = 196;
 /// 标签列与控件列间距。
 pub(crate) const CTRL_GAP: i32 = 16;
-/// 底部按钮区与最后一个分组的间距。
+/// 底部按钮区与内容的间距。
 pub(crate) const FOOTER_GAP: i32 = 16;
 /// 输入框高度。
 pub(crate) const FIELD_H: i32 = 30;
@@ -40,265 +41,19 @@ pub(crate) const BTN_W: i32 = 96;
 pub(crate) const BROWSE_W: i32 = 76;
 /// 下拉菜单单项高度。
 pub(crate) const MENU_ITEM_H: i32 = 30;
+/// 客户区最小高度（再小连底栏都放不下）。
+pub(crate) const MIN_CLIENT_H: i32 = 480;
+/// 滚动条宽度（逻辑像素）。
+pub(crate) const SCROLLBAR_W: i32 = 6;
 
-// ---------------------------------------------------------------- 字段定义
-
-/// 一个配置字段。
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub(crate) enum Field {
-    Hotkey,
-    HideSelf,
-    PrivacyMode,
-    ToolbarCollapsed,
-    CopyFormat,
-    DefaultDir,
-    LongMax,
-    LongSearch,
-    AiProvider,
-    AiModel,
-    AiEndpoint,
-    AiApiKey,
-    AiTimeout,
-}
-
-/// 控件类型。
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Kind {
-    Edit,
-    /// 密码框（`ES_PASSWORD`，系统负责掩码）。
-    Password,
-    Check,
-    Combo,
-}
-
-/// 控件定义。
-#[derive(Clone, Copy)]
-pub(crate) struct Widget {
-    pub(crate) field: Field,
-    pub(crate) kind: Kind,
-    /// 复选框方块右侧的文字（其它类型为空）。
-    pub(crate) text: &'static str,
-}
-
-/// 行尾附加按钮（如「浏览…」）。
-#[derive(Clone, Copy)]
-pub(crate) struct Trailing {
-    pub(crate) text: &'static str,
-    pub(crate) id: usize,
-}
-
-/// 一行。
-#[derive(Clone, Copy)]
-pub(crate) struct Row {
-    /// 左侧标签（空 = 控件从标签列开始）。
-    pub(crate) label: &'static str,
-    pub(crate) widgets: &'static [Widget],
-    pub(crate) trailing: Option<Trailing>,
-}
-
-/// 一个分组。
-#[derive(Clone, Copy)]
-pub(crate) struct Section {
-    pub(crate) title: &'static str,
-    pub(crate) note: &'static str,
-    pub(crate) rows: &'static [Row],
-}
-
-/// 复制格式下拉项。**顺序即映射**（0 = Both，1 = Png，2 = Dib）。
-pub(crate) const COPY_FORMAT_ITEMS: &[&str] = &["PNG + DIB", "仅 PNG", "仅 DIB"];
-/// AI 服务方下拉项（0 = minimax，1 = deepseek）。
-pub(crate) const AI_PROVIDER_ITEMS: &[&str] = &["MiniMax", "DeepSeek"];
-
-pub(crate) const W_HOTKEY: Widget = Widget {
-    field: Field::Hotkey,
-    kind: Kind::Edit,
-    text: "",
-};
-pub(crate) const W_HIDE_SELF: Widget = Widget {
-    field: Field::HideSelf,
-    kind: Kind::Check,
-    text: "截图时隐藏本窗口",
-};
-pub(crate) const W_PRIVACY_MODE: Widget = Widget {
-    field: Field::PrivacyMode,
-    kind: Kind::Check,
-    text: "隐私模式",
-};
-pub(crate) const W_TOOLBAR_COLLAPSED: Widget = Widget {
-    field: Field::ToolbarCollapsed,
-    kind: Kind::Check,
-    text: "工具栏折叠",
-};
-pub(crate) const W_COPY_FORMAT: Widget = Widget {
-    field: Field::CopyFormat,
-    kind: Kind::Combo,
-    text: "",
-};
-pub(crate) const W_DEFAULT_DIR: Widget = Widget {
-    field: Field::DefaultDir,
-    kind: Kind::Edit,
-    text: "",
-};
-pub(crate) const W_LONG_MAX: Widget = Widget {
-    field: Field::LongMax,
-    kind: Kind::Edit,
-    text: "",
-};
-pub(crate) const W_LONG_SEARCH: Widget = Widget {
-    field: Field::LongSearch,
-    kind: Kind::Edit,
-    text: "",
-};
-pub(crate) const W_AI_PROVIDER: Widget = Widget {
-    field: Field::AiProvider,
-    kind: Kind::Combo,
-    text: "",
-};
-pub(crate) const W_AI_MODEL: Widget = Widget {
-    field: Field::AiModel,
-    kind: Kind::Edit,
-    text: "",
-};
-pub(crate) const W_AI_ENDPOINT: Widget = Widget {
-    field: Field::AiEndpoint,
-    kind: Kind::Edit,
-    text: "",
-};
-pub(crate) const W_AI_KEY: Widget = Widget {
-    field: Field::AiApiKey,
-    kind: Kind::Password,
-    text: "",
-};
-pub(crate) const W_AI_TIMEOUT: Widget = Widget {
-    field: Field::AiTimeout,
-    kind: Kind::Edit,
-    text: "",
-};
-
-pub(crate) const TRAILING_BROWSE: Trailing = Trailing {
-    text: "浏览…",
-    id: ID_BROWSE,
-};
-
-pub(crate) const SECTIONS: &[Section] = &[
-    Section {
-        title: "常规",
-        note: "截图行为",
-        rows: &[
-            Row {
-                label: "截图热键",
-                widgets: &[W_HOTKEY],
-                trailing: None,
-            },
-            Row {
-                label: "",
-                widgets: &[W_HIDE_SELF, W_PRIVACY_MODE, W_TOOLBAR_COLLAPSED],
-                trailing: None,
-            },
-            Row {
-                label: "复制到剪贴板的格式",
-                widgets: &[W_COPY_FORMAT],
-                trailing: None,
-            },
-            Row {
-                label: "默认保存目录",
-                widgets: &[W_DEFAULT_DIR],
-                trailing: Some(TRAILING_BROWSE),
-            },
-        ],
-    },
-    Section {
-        title: "长截图",
-        note: "长度单位：物理像素",
-        rows: &[
-            Row {
-                label: "最大长度（0 = 不限）",
-                widgets: &[W_LONG_MAX],
-                trailing: None,
-            },
-            Row {
-                label: "搜索窗口（像素）",
-                widgets: &[W_LONG_SEARCH],
-                trailing: None,
-            },
-        ],
-    },
-    Section {
-        title: "AI",
-        note: "DeepSeek / MiniMax",
-        rows: &[
-            Row {
-                label: "服务方",
-                widgets: &[W_AI_PROVIDER],
-                trailing: None,
-            },
-            Row {
-                label: "模型",
-                widgets: &[W_AI_MODEL],
-                trailing: None,
-            },
-            Row {
-                label: "端点",
-                widgets: &[W_AI_ENDPOINT],
-                trailing: None,
-            },
-            Row {
-                label: "API Key",
-                widgets: &[W_AI_KEY],
-                trailing: None,
-            },
-            Row {
-                label: "请求超时（秒）",
-                widgets: &[W_AI_TIMEOUT],
-                trailing: None,
-            },
-        ],
-    },
-];
-
-/// 下拉框对应的候选项。
-pub(crate) fn combo_items(field: Field) -> &'static [&'static str] {
-    match field {
-        Field::CopyFormat => COPY_FORMAT_ITEMS,
-        Field::AiProvider => AI_PROVIDER_ITEMS,
-        _ => &[],
-    }
-}
-
-/// 焦点顺序（Tab / Shift+Tab 走这个）。
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FocusItem {
-    Field(Field),
-    Button(usize),
-}
-
-pub(crate) const FOCUS_ITEMS: &[FocusItem] = &[
-    FocusItem::Field(Field::Hotkey),
-    FocusItem::Field(Field::HideSelf),
-    FocusItem::Field(Field::PrivacyMode),
-    FocusItem::Field(Field::ToolbarCollapsed),
-    FocusItem::Field(Field::CopyFormat),
-    FocusItem::Field(Field::DefaultDir),
-    FocusItem::Field(Field::LongMax),
-    FocusItem::Field(Field::LongSearch),
-    FocusItem::Field(Field::AiProvider),
-    FocusItem::Field(Field::AiModel),
-    FocusItem::Field(Field::AiEndpoint),
-    FocusItem::Field(Field::AiApiKey),
-    FocusItem::Field(Field::AiTimeout),
-    FocusItem::Button(ID_BROWSE),
-    FocusItem::Button(ID_SAVE),
-    FocusItem::Button(ID_CANCEL),
-];
-
-// ---------------------------------------------------------------- 布局
+// ---------------------------------------------------------------- 布局结果
 
 /// 一个控件的最终几何。
 #[derive(Clone, Copy)]
 pub(crate) struct WidgetGeom {
     pub(crate) field: Field,
     pub(crate) kind: Kind,
-    /// 控件本体矩形（输入框 / 下拉框 / 复选框方块）。
+    /// 控件本体矩形（输入框 / 下拉框 / 复选框方块），**内容坐标**。
     pub(crate) rect: Rect,
     /// 复选框方块右侧的文字。
     pub(crate) text: &'static str,
@@ -328,11 +83,32 @@ pub(crate) struct PanelGeom {
 pub(crate) struct Layout {
     pub(crate) panels: Vec<PanelGeom>,
     pub(crate) rows: Vec<RowGeom>,
-    /// 客户区高度。
+    /// 内容高度（最后一个面板的底边，内容坐标）。
+    pub(crate) content_h: i32,
+    /// 客户区高度（已按工作区夹取）。
     pub(crate) client_h: i32,
-    /// 底部「取消」「保存」按钮矩形。
+    /// 可滚动视口（客户区坐标，不含底部按钮）。
+    pub(crate) viewport: Rect,
+    /// 滚动条轨道。
+    pub(crate) scrollbar: Rect,
+    /// 底部按钮（固定，不随滚动移动）。
     pub(crate) cancel: Rect,
     pub(crate) save: Rect,
+}
+
+impl Layout {
+    /// 最大滚动偏移。
+    pub(crate) fn scroll_max(&self, k: f32) -> i32 {
+        (self.content_h + px(PAD, k) - self.viewport.h).max(0)
+    }
+
+    pub(crate) fn widget_rect(&self, field: Field) -> Option<Rect> {
+        self.rows
+            .iter()
+            .flat_map(|r| r.widgets.iter())
+            .find(|w| w.field == field)
+            .map(|w| w.rect)
+    }
 }
 
 /// 估算文本宽度（逻辑像素）。
@@ -352,7 +128,10 @@ pub(crate) fn est_text_w(text: &str, size: i32) -> i32 {
 }
 
 /// 计算整个界面的布局。
-pub(crate) fn compute_layout(k: f32) -> Layout {
+///
+/// `max_client_h` 是屏幕工作区允许的最大客户区高度；内容放不下时窗口封顶，
+/// 由滚动条补足（`Layout::scroll_max` > 0）。
+pub(crate) fn compute_layout(form: &Form, k: f32, max_client_h: i32) -> Layout {
     let panel_w = px(WIN_W, k) - px(PAD, k) * 2;
     let inner_x = px(PAD, k) + px(PANEL_PAD_X, k);
     let inner_w = panel_w - px(PANEL_PAD_X, k) * 2;
@@ -366,7 +145,7 @@ pub(crate) fn compute_layout(k: f32) -> Layout {
     let mut rows = Vec::new();
     let mut y = px(PAD, k);
 
-    for (si, section) in SECTIONS.iter().enumerate() {
+    for (si, section) in form.sections.iter().enumerate() {
         let panel_y = y;
         let rows_y = panel_y + px(PANEL_PAD_TOP, k) + px(HEADER_H, k);
         let n_rows = section.rows.len() as i32;
@@ -457,23 +236,43 @@ pub(crate) fn compute_layout(k: f32) -> Layout {
             rect: Rect::new(px(PAD, k), panel_y, panel_w, section_h),
         });
         y = panel_y + section_h;
-        if si + 1 < SECTIONS.len() {
+        if si + 1 < form.sections.len() {
             y += px(SECTION_GAP, k);
         }
     }
 
-    // 底部按钮
-    let footer_y = y + px(FOOTER_GAP, k);
-    let bw = px(BTN_W, k);
-    let bh = px(BTN_H, k);
+    // 内容高度（不含底栏）
+    let content_h = y;
+    let footer_h = px(BTN_H, k);
+    let pad = px(PAD, k);
+    let natural = content_h + px(FOOTER_GAP, k) + footer_h + pad;
+    let min_h = px(MIN_CLIENT_H, k);
+    let max_h = max_client_h.max(min_h);
+    let client_h = natural.clamp(min_h, max_h);
+
+    // 底栏固定：客户区底部往上 PAD + 按钮高
+    let footer_y = client_h - pad - footer_h;
     let client_w = px(WIN_W, k);
-    let save = Rect::new(client_w - px(PAD, k) - bw, footer_y, bw, bh);
-    let cancel = Rect::new(save.x - bw - px(8, k), footer_y, bw, bh);
+    let bw = px(BTN_W, k);
+    let save = Rect::new(client_w - pad - bw, footer_y, bw, footer_h);
+    let cancel = Rect::new(save.x - bw - px(8, k), footer_y, bw, footer_h);
+
+    // 滚动条轨道：画在右侧留白里，不占内容宽度（避免撑宽面板）
+    let track_w = px(SCROLLBAR_W, k);
+    let scrollbar = Rect::new(
+        client_w - pad / 2 - track_w / 2,
+        pad,
+        track_w,
+        (footer_y - pad).max(0),
+    );
 
     Layout {
         panels,
         rows,
-        client_h: footer_y + bh + px(PAD, k),
+        content_h,
+        client_h,
+        viewport: Rect::new(0, 0, client_w, footer_y),
+        scrollbar,
         cancel,
         save,
     }
