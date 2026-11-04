@@ -36,7 +36,8 @@ use windows::Win32::Media::MediaFoundation::{
     MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_AVG_BITRATE, MF_MT_DEFAULT_STRIDE, MF_MT_FRAME_RATE,
     MF_MT_FRAME_SIZE, MF_MT_INTERLACE_MODE, MF_MT_MAJOR_TYPE, MF_MT_SAMPLE_SIZE, MF_MT_SUBTYPE,
     MF_MT_TRANSFER_FUNCTION, MF_MT_VIDEO_NOMINAL_RANGE, MF_MT_VIDEO_PRIMARIES, MF_MT_YUV_MATRIX,
-    MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, MF_TRANSCODE_CONTAINERTYPE, MF_VERSION,
+    MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, MF_TRANSCODE_CONTAINERTYPE,
+    MFTranscodeContainerType_FMPEG4, MF_VERSION,
 };
 use windows::Win32::System::Com::{
     CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED,
@@ -133,7 +134,12 @@ impl VideoEncoder {
                 attrs.ok_or_else(|| Error::Image("MFCreateAttributes 没返回属性集".into()))?;
         // 显式声明 MP4 容器（靠扩展名推断会出问题）
         attrs
-            .SetGUID(&MF_TRANSCODE_CONTAINERTYPE, &MFTranscodeContainerType_MPEG4)
+            .SetGUID(
+                &MF_TRANSCODE_CONTAINERTYPE,
+                // 分片 MP4：进程被强杀时 moov 已经写进各分片，文件仍可播/可恢复；
+                // 正常 Finalize 后仍是标准 MP4。
+                &MFTranscodeContainerType_FMPEG4,
+            )
             .map_err(mf_err)?;
         // **不要**设 `MF_SINK_WRITER_DISABLE_THROTTLING`：
         // 关掉节流后 `WriteSample` 只是把样本塞进 sink 内部队列就返回，

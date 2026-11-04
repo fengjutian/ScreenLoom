@@ -22,9 +22,13 @@
   "menu_border": "#3C444F",
   "focus_ring": "#07C160",
   "white": "#FFFFFF",
+  "scroll_track": "#14FFFFFF",
+  "scroll_thumb": "#40FFFFFF",
+  "scroll_thumb_hover": "#66FFFFFF",
   "radius_panel": 9,
   "radius_field": 6,
   "radius_btn": 6,
   "radius_menu": 8,
-  "radius_check": 4
+  "radius_check": 4,
+  "radius_scroll": 3
 }

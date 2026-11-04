@@ -61,6 +61,12 @@ struct Args {
     record_out: Option<std::path::PathBuf>,
     /// `--record-monitor N`：录制目标显示器下标
     record_monitor: Option<usize>,
+    /// `--record-region x,y,w,h`
+    record_region: Option<screenloom_core::Rect>,
+    /// `--record-virtual`：整块虚拟屏
+    record_virtual: bool,
+    /// `--record-window TITLE`：按标题录制窗口
+    record_window: Option<String>,
     /// `--record-fps N`：录制帧率
     record_fps: Option<u32>,
     /// `--record-bitrate BPS`：录制码率
@@ -195,6 +201,28 @@ fn main() {
                 match s.trim().parse::<usize>() {
                     Ok(v) => args.record_monitor = Some(v),
                     Err(_) => die(&format!("--record-monitor 需要一个非负整数，收到: {s}")),
+                }
+            }
+            "--record-region" => {
+                i += 1;
+                let Some(s) = argv.get(i) else {
+                    die("--record-region 需要 x,y,w,h");
+                };
+                let p: Vec<i32> = s
+                    .split(',')
+                    .filter_map(|p| p.trim().parse::<i32>().ok())
+                    .collect();
+                if p.len() != 4 || p[2] <= 0 || p[3] <= 0 {
+                    die(&format!("--record-region 格式应为 x,y,w,h，收到: {s}"));
+                }
+                args.record_region = Some(screenloom_core::Rect::new(p[0], p[1], p[2], p[3]));
+            }
+            "--record-virtual" => args.record_virtual = true,
+            "--record-window" => {
+                i += 1;
+                match argv.get(i) {
+                    Some(t) => args.record_window = Some(t.clone()),
+                    None => die("--record-window 需要一个窗口标题"),
                 }
             }
             "--record-fps" => {
@@ -342,6 +370,26 @@ fn main() {
         };
         if let Some(idx) = args.record_monitor {
             opts.target = record::RecordTarget::Monitor(idx);
+        } else if let Some(r) = args.record_region {
+            opts.target = record::RecordTarget::Region(r);
+        } else if let Some(title) = &args.record_window {
+            let w: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+            let hwnd = unsafe {
+                windows::Win32::UI::WindowsAndMessaging::FindWindowW(
+                    None,
+                    windows::core::PCWSTR(w.as_ptr()),
+                )
+            }
+            .map_err(|e| format!("找不到窗口「{title}」: {e}"));
+            match hwnd {
+                Ok(h) => opts.target = record::RecordTarget::Window(h.0 as isize),
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        } else if args.record_virtual {
+            opts.target = record::RecordTarget::VirtualScreen;
         }
         if let Some(p) = args.record_out.clone() {
             opts.out_path = p;
@@ -516,6 +564,8 @@ fn print_help() {
          screenloom --record N     录屏 N 秒，输出 H.264/MP4（默认 %USERPROFILE%\\Videos\\Screenloom）\n  \
          screenloom --record-out P 指定录制输出文件（.mp4）\n  \
          screenloom --record-monitor N 录制指定显示器下标（默认主显示器）\n  \
+         screenloom --record-region x,y,w,h 录制屏幕区域（虚拟屏物理像素）\n  \
+         screenloom --record-virtual 录制整块虚拟屏\n  \
          screenloom --record-fps N     录制帧率（1–120，默认 30）\n  \
          screenloom --record-bitrate B 录制码率（bps，默认 8000000）\n  \
          screenloom --record-countdown N 开始前倒计时秒数（0–10）\n  \

@@ -1,0 +1,25 @@
+# Netlify 部署配置（站点根目录 = website/）
+#
+# Netlify 读取仓库根目录或 base 目录下的 netlify.toml。
+# 在 Netlify 后台把 Base directory 设为 `website`，
+# 本文件即可生效；publish 路径相对 base 目录。
+
+[build]
+  base = "website"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# SPA 兜底：本站是单页应用，任何路径都回落到 index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# 带 hash 的静态资源不加缓存头，避免发布后拿到旧文件
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

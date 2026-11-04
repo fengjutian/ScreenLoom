@@ -163,6 +163,11 @@ impl RecordSession {
     {
         let paths = RecordPaths::new(opts.out_path.clone())?;
         paths.prepare()?;
+        if let Some(parent) = paths.partial.parent() {
+            for p in super::paths::recover_partials(parent) {
+                eprintln!("已恢复上次异常中断的录制: {}", p.display());
+            }
+        }
         let control = Arc::new(Control::new());
         let (init_tx, init_rx) = mpsc::sync_channel::<Result<()>>(1);
 

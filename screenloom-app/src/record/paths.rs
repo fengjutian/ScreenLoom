@@ -72,6 +72,40 @@ pub fn check_out_ext(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// 扫描并恢复上次异常退出留下的 `.partial.mp4`。
+///
+/// 现在录制写的是**分片 MP4**，即使没来得及 Finalize，文件本身通常仍可播放；
+/// 这里把非空临时文件改名为 `.recovered.mp4`，空文件直接删除。
+pub fn recover_partials(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return out;
+    };
+    for e in rd.flatten() {
+        let p = e.path();
+        let name = p.file_name().and_then(|s| s.to_str()).unwrap_or_default();
+        if !name.ends_with(".partial.mp4") {
+            continue;
+        }
+        let len = e.metadata().map(|m| m.len()).unwrap_or(0);
+        if len == 0 {
+            let _ = std::fs::remove_file(&p);
+            continue;
+        }
+        let stem = p
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("recording")
+            .trim_end_matches(".partial")
+            .to_string();
+        let dst = p.with_file_name(format!("{stem}.recovered.mp4"));
+        if std::fs::rename(&p, &dst).is_ok() {
+            out.push(dst);
+        }
+    }
+    out
+}
+
 /// 同名文件存在时追加 `_2`、`_3`…
 fn unique_path(path: &Path) -> PathBuf {
     if !path.exists() {

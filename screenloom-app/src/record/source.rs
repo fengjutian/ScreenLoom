@@ -44,6 +44,8 @@ pub struct FrameSource {
     w: u32,
     h: u32,
     crop: Option<Crop>,
+    /// 虚拟屏过大时缩到可编码尺寸（宽, 高）。
+    scale_to: Option<(u32, u32)>,
     /// 当前实际使用的后端（日志/错误提示用）。
     pub backend_name: &'static str,
 }
@@ -63,6 +65,7 @@ impl FrameSource {
                             w,
                             h,
                             crop: None,
+                            scale_to: None,
                             backend_name: "WGC(window)",
                         })
                     }
@@ -75,6 +78,7 @@ impl FrameSource {
                             w,
                             h,
                             crop: None,
+                            scale_to: None,
                             backend_name: "GDI(window)",
                         })
                     }
@@ -83,11 +87,23 @@ impl FrameSource {
             RecordTarget::VirtualScreen => {
                 let gdi = GdiSource::new(GdiTarget::Virtual, fps)?;
                 let (w, h) = gdi.size();
+                // 4K/多屏合成后尺寸可能远超编码器实时能力；等比缩到 1920 宽以内。
+                let scale_to = if w > 1920 || h > 1080 {
+                    let f = (1920.0 / w as f32).min(1080.0 / h as f32);
+                    Some((
+                        ((w as f32 * f) as u32 & !1).max(2),
+                        ((h as f32 * f) as u32 & !1).max(2),
+                    ))
+                } else {
+                    None
+                };
+                let (ow, oh) = scale_to.unwrap_or((w, h));
                 Ok(FrameSource {
                     inner: Inner::Gdi(gdi),
-                    w,
-                    h,
+                    w: ow,
+                    h: oh,
                     crop: None,
+                    scale_to,
                     backend_name: "GDI(virtual)",
                 })
             }
@@ -129,9 +145,10 @@ impl FrameSource {
             }),
             Inner::Gdi(s) => s.take_latest()?,
         };
-        Ok(match (f, self.crop) {
-            (Some(f), Some(c)) => Some(crop_frame(f, c)),
-            (f, _) => f,
+        Ok(match (f, self.crop, self.scale_to) {
+            (Some(f), Some(c), _) => Some(crop_frame(f, c)),
+            (Some(f), None, Some((w, h))) => Some(scale_frame(f, w, h)),
+            (f, _, _) => f,
         })
     }
 }
@@ -145,6 +162,7 @@ fn open_capture(target: CaptureTarget, fps: u32, cursor: bool) -> Result<FrameSo
                 w,
                 h,
                 crop: None,
+                scale_to: None,
                 backend_name: "WGC",
             })
         }
@@ -163,6 +181,7 @@ fn open_capture(target: CaptureTarget, fps: u32, cursor: bool) -> Result<FrameSo
                 w,
                 h,
                 crop: None,
+                scale_to: None,
                 backend_name: "GDI",
             })
         }
@@ -182,6 +201,21 @@ fn crop_frame(f: Frame, c: Crop) -> Frame {
         h: c.h,
         data,
     }
+}
+
+/// 最近邻缩放（整块虚拟屏过大时降到 1080p 级别，保证能实时编码）。
+fn scale_frame(f: Frame, tw: u32, th: u32) -> Frame {
+    let mut data = vec![0u8; (tw * th * 4) as usize];
+    for y in 0..th {
+        let sy = (y * f.h / th).min(f.h - 1);
+        for x in 0..tw {
+            let sx = (x * f.w / tw).min(f.w - 1);
+            let s = ((sy * f.w + sx) * 4) as usize;
+            let d = ((y * tw + x) * 4) as usize;
+            data[d..d + 4].copy_from_slice(&f.data[s..s + 4]);
+        }
+    }
+    Frame { w: tw, h: th, data }
 }
 
 /// GDI 帧源：后台线程按目标帧率抓帧，主循环只取“最新一帧”。

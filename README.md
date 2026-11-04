@@ -47,7 +47,7 @@ D:\github\screenloom\
 
 依赖方向**单向**：`app → ui → capture → core`。
 
-`screenloom-app/src/settings/` 按职责拆成 7 个模块：`mod.rs`（窗口过程 + `open()` 入口）、`layout.rs`（字段模型与布局计算）、`state.rs`（窗口状态与配置绑定）、`paint.rs`（自绘）、`controls.rs`（原生 `EDIT` / `BUTTON`）、`combo.rs`（自绘下拉框）、`validate.rs`（保存前校验）。
+`screenloom-app/src/settings/` 按职责拆成 8 个模块：`mod.rs`（窗口过程 + `open()` / `open_record()`）、`form.rs`（**运行时表单模型**：字段 / 控件 / 访问器）、`layout.rs`（几何）、`scroll.rs`（滚动视口数学）、`state.rs`（窗口状态与 `draft: Config` 绑定）、`paint.rs`（自绘 + 滚动条）、`controls.rs`（原生 `EDIT` / `BUTTON` + 位置同步）、`combo.rs`（自绘下拉框）。加一个字段 = `form.rs` 里加一个 `Field` 变体 + 一条 `Row` + 一对 get/set。
 
 | crate | 职责 | 硬约束 |
 |---|---|---|
@@ -78,7 +78,7 @@ cargo build --release -p screenloom-app --bins --examples
 | `cargo test --workspace` | 全量单测 |
 | `cargo build --workspace` | 全 workspace |
 
-当前状态：`cargo test --workspace` **90 个测试全绿**（app 49 / core 24 / ui 17），release **零警告**。
+当前状态：`cargo test --workspace` **158 个测试全绿**（app 87 / core 48 / ui 20 / capture 3）。
 
 ---
 
@@ -224,7 +224,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1
 ```
 
 保存文件 → 应用 400ms 内重绘（**不重启、不重编译**）。
-可覆盖 24 个颜色键 + 5 个圆角键，键名见 `theme.dev.json`（未列出的键会被忽略）。
+可覆盖 26 个颜色键 + 6 个圆角键，键名见 `theme.dev.json`（未列出的键会被忽略）。
+新增滚动条键：`scroll_track` / `scroll_thumb` / `scroll_thumb_hover` / `radius_scroll`，旧 JSON 不写也照常工作。
 颜色接受 `#RRGGBB` / `#AARRGGBB` / `0xAARRGGBB`。
 
 > **注意**：JSON **不能带 BOM**（`serde_json` 不认），写文件时用
@@ -262,7 +263,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\e2e_toolbar_button
 |---|---|
 | `cargo fmt --all -- --check` | **0 diff**（全仓已 rustfmt 格式化） |
 | `cargo clippy --workspace --all-targets` | **0 warning / 0 error** |
-| `cargo test --workspace` | **90 个测试全绿**（app 49 / core 24 / ui 17） |
+| `cargo test --workspace` | **158 个测试全绿**（app 87 / core 48 / ui 20 / capture 3） |
 
 ### 调试探针（examples）
 
@@ -328,7 +329,7 @@ cargo run -p screenloom-app --example ocr_probe
 
 | 想做的事 | 落点 |
 |---|---|
-| 新配置项 | `screenloom-core/src/config.rs` 加字段 → `screenloom-app/src/settings/layout.rs` 加 `Field` / `SECTIONS`（**`EDIT` 创建顺序必须 == 字段顺序**，E2E 按下标取控件） |
+| 新配置项 | `screenloom-core/src/config.rs` 加字段 → `screenloom-app/src/settings/form.rs` 加 `Field` 变体 + 一条 `Row` + get/set 访问器（**`EDIT` 创建顺序必须 == 字段顺序**，E2E 按下标取控件） |
 | 改界面配色 / 圆角 | `screenloom-app/src/theme.rs`（纯配色 + 绘制基元，不含 Win32 逻辑） |
 | 新截图工具 / 编辑器 | `screenloom-ui/src/toolbar.rs` + `screenloom-ui/src/overlay.rs` |
 | 新工具栏按钮 | ① `toolbar.rs` 加 `ItemKind` 变体 + `measure()` 宽度 + `build()` 布局 + `paint()` 标签；② `overlay.rs` 加分支（必要时加 `OverlayAction` 变体）；③ `screenloom-app/src/flow.rs` 装 handler / 处理 action。**宽度一定要同步改 `measure()`**，否则工具栏排版错位 |
@@ -353,7 +354,7 @@ cargo run -p screenloom-app --example ocr_probe
 | **录屏缺音频/区域/窗口** | 已支持单显示器、热键/托盘/HUD、暂停、倒计时、帧率/码率/目录/指针配置；**没有**系统声/麦克风、区域/窗口/整块虚拟屏、崩溃恢复 |
 | 标注填充 | 形状填充固定 30% alpha |
 | 工具栏位置 | 固定在虚拟屏底部 |
-| 设置窗口无滚动条 | 内容高度由布局常量决定（客户区 829 物理像素 @1.25，适配 12 个字段）；加字段需重算 `compute_layout` |
+| 设置窗口布局 | 内容超过工作区时窗口封顶、右侧出滚动条（滚轮 / `PgUp`·`PgDn` / 拖动 / Tab 自动显现）；不溢出时尺寸与旧版逐像素一致（客户区 652 @1.0 / 829 @1.25）。加字段不再需要重算 `compute_layout` |
 | 自绘控件无障碍 | 设置窗口的按钮 / 复选框 / 下拉框是自绘的，不是标准 BUTTON 类 → UI Automation 识别不到，失去系统级屏幕阅读器语义 |
 | 只做 Windows | `screenloom-core` 保持可移植，但不实现 macOS/Linux |
 
@@ -365,7 +366,7 @@ cargo run -p screenloom-app --example ocr_probe
 |---|---|
 | `doc/WeChat4-截图工具逆向规格书.md` | 微信 4.x 截图工具的逆向分析（函数、结构、行为） |
 | `doc/实现契约.md` | **实现准绳**：分层约定、类型签名、事件流、AI 契约、设置窗口契约、Win32 坑位、验收清单 |
-| `doc/设置表单引擎与滚动方案.md` | **ADR-001**：设置模块「表单抽象 + 滚动视口」的决策与设计（不引 GUI 框架的理由、运行时表单模型、滚动几何、兼容性契约、分步实施） |
+| `doc/设置表单引擎与滚动方案.md` | **ADR-001（已实现）**：设置模块「表单抽象 + 滚动视口」的决策与设计（不引 GUI 框架的理由、运行时表单模型、滚动几何、兼容性契约、踩坑备忘） |
 | `doc/录屏方案.md` | **录屏预研**：可行性论证与落地设计（MF 编码链路实测证据 + 踩坑清单 + 可借鉴的开源项目 + 风险 + 分阶段）；M0 基础链路已落地 |
 | `doc/录屏功能需求.md` | **录屏功能需求**：入口/目标/音视频/控制/HUD/配置/可靠性/验收清单（REC-01～REC-108）+ P0/P1/P2 实施计划 |
 
