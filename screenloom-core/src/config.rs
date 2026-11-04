@@ -1,4 +1,4 @@
-﻿//! 配置：极简 `key=value` 文本格式，避免引入序列化依赖。
+//! 配置：极简 `key=value` 文本格式，避免引入序列化依赖。
 //!
 //! 对齐微信侧的同类开关：`gScreenshotShortcutKey`、`gScreenShotHideWindow`、
 //! `clicfg_pc_screenshot_toolbar_collapse`、`longscreenshot_use_grabwindow` 等。
@@ -54,6 +54,24 @@ pub struct Config {
     pub long_screenshot_max: u32,
     /// 长截图搜索窗口（物理像素）
     pub long_screenshot_search: i32,
+    /// 录屏热键，默认 Alt+R
+    pub record_hotkey: String,
+    /// 录制输出目录；None 表示 `Videos\Screenloom`
+    pub record_dir: Option<PathBuf>,
+    /// 录制帧率（1–120）
+    pub record_fps: u32,
+    /// 录制码率（bps）
+    pub record_bitrate: u32,
+    /// 是否录制鼠标指针
+    pub record_cursor: bool,
+    /// 开始录制前的倒计时（秒，0 = 不等待）
+    pub record_countdown: u32,
+    /// 是否显示 REC HUD
+    pub record_show_hud: bool,
+    /// 录制结束后打开所在文件夹
+    pub record_open_folder: bool,
+    /// 上次录制的显示器下标；-1 = 主显示器
+    pub record_monitor: i32,
     /// 默认保存目录，None 表示每次询问
     pub default_dir: Option<PathBuf>,
     /// AI 服务方：`minimax`（默认）/ `deepseek`
@@ -83,6 +101,15 @@ impl Default for Config {
             copy_format: CopyFormat::Both,
             long_screenshot_max: 0,
             long_screenshot_search: 240,
+            record_hotkey: "Alt+R".to_string(),
+            record_dir: None,
+            record_fps: 30,
+            record_bitrate: 8_000_000,
+            record_cursor: true,
+            record_countdown: 3,
+            record_show_hud: true,
+            record_open_folder: true,
+            record_monitor: -1,
             default_dir: None,
             ai_provider: "minimax".to_string(),
             ai_model: String::new(),
@@ -137,6 +164,34 @@ impl Config {
                 "long_screenshot_search" => {
                     cfg.long_screenshot_search = v.parse().unwrap_or(cfg.long_screenshot_search)
                 }
+                // ---- 录屏 ----
+                "record_hotkey" => cfg.record_hotkey = v.to_string(),
+                "record_dir" => {
+                    cfg.record_dir = if v.is_empty() {
+                        None
+                    } else {
+                        Some(PathBuf::from(v))
+                    }
+                }
+                "record_fps" => cfg.record_fps = v.parse().unwrap_or(cfg.record_fps),
+                "record_bitrate" => {
+                    cfg.record_bitrate = v.parse().unwrap_or(cfg.record_bitrate)
+                }
+                "record_cursor" => {
+                    cfg.record_cursor = parse_bool(v).unwrap_or(cfg.record_cursor)
+                }
+                "record_countdown" => {
+                    cfg.record_countdown = v.parse().unwrap_or(cfg.record_countdown)
+                }
+                "record_show_hud" => {
+                    cfg.record_show_hud = parse_bool(v).unwrap_or(cfg.record_show_hud)
+                }
+                "record_open_folder" => {
+                    cfg.record_open_folder = parse_bool(v).unwrap_or(cfg.record_open_folder)
+                }
+                "record_monitor" => {
+                    cfg.record_monitor = v.parse().unwrap_or(cfg.record_monitor)
+                }
                 // 空值表示「不指定目录」，不能当成路径 ""（否则会存到当前工作目录）。
                 "default_dir" => {
                     cfg.default_dir = if v.is_empty() {
@@ -174,6 +229,15 @@ impl Config {
              copy_format = {}\n\
              long_screenshot_max = {}\n\
              long_screenshot_search = {}\n\
+             record_hotkey = {}\n\
+             record_dir = {}\n\
+             record_fps = {}\n\
+             record_bitrate = {}\n\
+             record_cursor = {}\n\
+             record_countdown = {}\n\
+             record_show_hud = {}\n\
+             record_open_folder = {}\n\
+             record_monitor = {}\n\
              default_dir = {}\n\
              # ---- AI 接入（key 也可走环境变量 MINIMAX_API_KEY / DEEPSEEK_API_KEY）----\n\
              ai_provider = {}\n\
@@ -195,6 +259,18 @@ impl Config {
             },
             self.long_screenshot_max,
             self.long_screenshot_search,
+            self.record_hotkey,
+            self.record_dir
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+            self.record_fps,
+            self.record_bitrate,
+            self.record_cursor,
+            self.record_countdown,
+            self.record_show_hud,
+            self.record_open_folder,
+            self.record_monitor,
             self.default_dir
                 .as_ref()
                 .map(|p| p.display().to_string())

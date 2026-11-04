@@ -23,7 +23,7 @@ pub mod stitch;
 pub use annotation::{Annotation, ShapeKind, Tool};
 pub use canvas::Canvas;
 pub use color::{BORDER, MASK_ALPHA, PALETTE, TEXT};
-pub use config::{Config, CopyFormat};
+pub use config::{exclude_entry, parse_exclude_entry, Config, CopyFormat};
 pub use error::{Error, Result};
 pub use geometry::{Point, Rect, Size};
 pub use icon::{draw_app_icon, pack_ico};

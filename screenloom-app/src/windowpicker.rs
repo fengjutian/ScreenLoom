@@ -15,14 +15,11 @@
 //! UI 全部用原生控件（`LISTBOX` + `BUTTON`），字体走系统默认，
 //! 不引入字体管理。
 
-// 这个模块还没被接线（上层还没调用 `run`），先别让 dead_code 报警。
-#![allow(dead_code)]
-
 use screenloom_capture::WindowInfo;
 use screenloom_core::Rect;
 
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{COLOR_WINDOW, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{AdjustWindowRectExForDpi, GetDpiForSystem};

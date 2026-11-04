@@ -32,13 +32,28 @@ pub enum TrayCommand {
     Capture,
     /// 打开设置窗口
     Settings,
+    /// 选择要从截图中排除的窗口
+    ExcludeWindows,
+    /// 开始录屏
+    RecordStart,
+    /// 停止录屏
+    RecordStop,
+    /// 暂停/继续录屏
+    RecordTogglePause,
+    /// 打开录像文件夹
+    OpenRecordFolder,
     /// 退出程序
     Exit,
 }
 
 const MENU_CAPTURE: usize = 2001;
 const MENU_SETTINGS: usize = 2002;
-const MENU_EXIT: usize = 2003;
+const MENU_EXCLUDE: usize = 2003;
+const MENU_RECORD_START: usize = 2004;
+const MENU_RECORD_STOP: usize = 2005;
+const MENU_RECORD_PAUSE: usize = 2006;
+const MENU_RECORD_FOLDER: usize = 2007;
+const MENU_EXIT: usize = 2008;
 
 /// 托盘回调消息（Shell 发给托盘窗口）。
 pub const WM_TRAY: u32 = WM_APP + 20;
@@ -219,6 +234,37 @@ unsafe fn show_menu(hwnd: HWND) {
     let _ = AppendMenuW(
         menu,
         MF_STRING,
+        MENU_RECORD_START,
+        PCWSTR(wide("开始录屏").as_ptr()),
+    );
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        MENU_RECORD_STOP,
+        PCWSTR(wide("停止录屏").as_ptr()),
+    );
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        MENU_RECORD_PAUSE,
+        PCWSTR(wide("暂停/继续录屏").as_ptr()),
+    );
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        MENU_RECORD_FOLDER,
+        PCWSTR(wide("打开录像文件夹").as_ptr()),
+    );
+    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
+        MENU_EXCLUDE,
+        PCWSTR(wide("排除窗口…").as_ptr()),
+    );
+    let _ = AppendMenuW(
+        menu,
+        MF_STRING,
         MENU_SETTINGS,
         PCWSTR(wide("设置…").as_ptr()),
     );
@@ -244,6 +290,11 @@ unsafe fn show_menu(hwnd: HWND) {
 
     match cmd.0 as usize {
         MENU_CAPTURE => fire(TrayCommand::Capture),
+        MENU_EXCLUDE => fire(TrayCommand::ExcludeWindows),
+        MENU_RECORD_START => fire(TrayCommand::RecordStart),
+        MENU_RECORD_STOP => fire(TrayCommand::RecordStop),
+        MENU_RECORD_PAUSE => fire(TrayCommand::RecordTogglePause),
+        MENU_RECORD_FOLDER => fire(TrayCommand::OpenRecordFolder),
         MENU_SETTINGS => fire(TrayCommand::Settings),
         MENU_EXIT => fire(TrayCommand::Exit),
         _ => {}
@@ -266,6 +317,11 @@ unsafe extern "system" fn tray_wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
             let id = (wp.0 as u32 & 0xFFFF) as usize;
             match id {
                 MENU_CAPTURE => fire(TrayCommand::Capture),
+                MENU_EXCLUDE => fire(TrayCommand::ExcludeWindows),
+                MENU_RECORD_START => fire(TrayCommand::RecordStart),
+                MENU_RECORD_STOP => fire(TrayCommand::RecordStop),
+                MENU_RECORD_PAUSE => fire(TrayCommand::RecordTogglePause),
+                MENU_RECORD_FOLDER => fire(TrayCommand::OpenRecordFolder),
                 MENU_SETTINGS => fire(TrayCommand::Settings),
                 MENU_EXIT => fire(TrayCommand::Exit),
                 _ => {}

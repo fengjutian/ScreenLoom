@@ -21,9 +21,12 @@
 mod ai;
 mod aicli;
 mod clipboard;
+mod exclude;
 mod hotkey;
 mod http;
 mod ocr;
+mod overlay_handlers;
+mod privacy;
 mod record;
 mod save;
 mod settings;
@@ -291,7 +294,7 @@ fn main() {
 
     // ---- 录屏 ----
     if let Some(secs) = args.record {
-        let mut opts = match record::RecordOptions::defaults() {
+        let mut opts = match record::RecordOptions::from_config(&cfg) {
             Ok(o) => o,
             Err(e) => {
                 eprintln!("录制初始化失败: {e}");
@@ -299,7 +302,7 @@ fn main() {
             }
         };
         if let Some(idx) = args.record_monitor {
-            opts.target = screenloom_capture::CaptureTarget::Monitor(idx);
+            opts.target = record::RecordTarget::Monitor(idx);
         }
         if let Some(p) = args.record_out.clone() {
             opts.out_path = p;
@@ -309,6 +312,8 @@ fn main() {
             std::process::exit(1);
         }
         opts.duration = Some(std::time::Duration::from_secs(secs));
+        // CLI 是脚本化入口，默认不等倒计时；配置里显式设了才等。
+        opts.countdown = std::time::Duration::from_secs(cfg.record_countdown.min(10) as u64);
         eprintln!(
             "开始录制 {:.0} 秒 → {}（{} fps / {} bps）",
             secs as f64,
@@ -320,9 +325,10 @@ fn main() {
             Ok(o) => {
                 println!("已保存: {}", o.path.display());
                 println!(
-                    "{} 帧 / {:.1} 秒 / 目标 {} fps",
+                    "{} 帧 / {:.1} 秒 / {:.1} MB / 目标 {} fps",
                     o.frames,
                     o.elapsed.as_secs_f64(),
+                    o.bytes as f64 / 1_048_576.0,
                     opts.fps
                 );
             }

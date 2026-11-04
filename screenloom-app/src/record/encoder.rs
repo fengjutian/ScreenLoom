@@ -61,6 +61,8 @@ pub struct VideoEncoder {
     duration_100ns: i64,
     written: u64,
     finished: bool,
+    /// COM 套间守卫：必须比 `sink` 活得更久（字段顺序 = drop 顺序，放最后）。
+    _apartment: ComApartment,
 }
 
 impl VideoEncoder {
@@ -83,16 +85,16 @@ impl VideoEncoder {
             return Err(Error::Image("码率不能为 0".into()));
         }
 
-        // COM 套间：MF 是普通 COM，初始化一次即可。析构时配对反初始化。
+        // COM 套间 + MF 生命周期：guard 必须活到 sink 写完。
         let _apartment = ComApartment::enter();
-        // SAFETY: MF 是进程级 API，成对调用 MFStartup / MFShutdown。
-        unsafe {
+        let w_url = wide(path.as_os_str());
+
+        // 整段 MF 调用都是 unsafe：输入/输出媒体类型与 sink 的初始化必须原子地
+        // 成组，任何一步失败都不能留下半初始化的编码器。
+        let (sink, stream_index) = unsafe {
             MFStartup(MF_VERSION, 0).map_err(|e| {
                 Error::Image(format!("MFStartup 失败（系统缺少 Media Foundation）: {e}"))
             })?;
-        }
-
-        let w_url = wide(path.as_os_str());
         let mut attrs: Option<IMFAttributes> = None;
         // SAFETY: 输出参数合法。
         unsafe {
@@ -180,8 +182,11 @@ impl VideoEncoder {
             .map_err(|e| Error::Image(format!("AddStream(H.264) 失败: {e}")))?;
         sink.SetInputMediaType(stream_index, &in_type, None)
             .map_err(|e| Error::Image(format!("SetInputMediaType(NV12) 失败: {e}")))?;
-        sink.BeginWriting()
-            .map_err(|e| Error::Image(format!("BeginWriting 失败: {e}")))?;
+            sink.BeginWriting()
+                .map_err(|e| Error::Image(format!("BeginWriting 失败: {e}")))?;
+
+            (sink, stream_index)
+        };
 
         Ok(VideoEncoder {
             sink,
@@ -192,6 +197,7 @@ impl VideoEncoder {
             duration_100ns: 10_000_000 / fps as i64,
             written: 0,
             finished: false,
+            _apartment,
         })
     }
 

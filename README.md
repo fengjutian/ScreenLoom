@@ -37,10 +37,10 @@ base64     = "0.22"   # AI 图片 data URL
 
 ```
 D:\github\screenloom\
-├─ screenloom-core/      纯逻辑，不碰 Win32：几何 / 图像 / 标注 / 撤销 / 长截图拼接 / 配置 / 图标
-├─ screenloom-capture/   抓屏：WGC 主路径 + GDI 兜底 + 显示器枚举 + 虚拟屏整屏合成
+├─ screenloom-core/      纯逻辑，不碰 Win32：几何 / 图像 / 标注 / 撤销 / 长截图拼接 / NV12 转换 / 配置 / 图标
+├─ screenloom-capture/   抓屏：WGC 主路径 + GDI 兜底 + 显示器枚举 + 虚拟屏整屏合成 + 录屏持续帧源
 ├─ screenloom-ui/        渲染交互：GDI+ 管线 / 分层浮窗 / 选区 / 编辑器 / 工具栏 / 贴图窗
-├─ screenloom-app/       应用层：main / hotkey / tray / settings / theme / clipboard / ai / ocr / save
+├─ screenloom-app/       应用层：main / hotkey / tray / settings / theme / clipboard / ai / ocr / save / record（录屏）
 ├─ scripts/          E2E 与探针脚本（PowerShell）
 └─ probes/           探针与留证：mftprobe/（MF 编码器探针）· evidence/（取证产物）· e2e_out/（截图输出）
 ```
@@ -98,6 +98,9 @@ cargo build --release -p screenloom-app --bins --examples
 | `--long` | 长截图（用户滚动 + 自动匹配拼接）模式 |
 | `--sel x,y,w,h` | **脚本化截图**：直接截指定区域，不需要鼠标。坐标是**虚拟屏物理像素** |
 | `--ocr` | 识别剪贴板里图片的文字（本地 `Windows.Media.Ocr`） |
+| `--record N` | 录屏 N 秒，输出 H.264/MP4（默认 `%USERPROFILE%\Videos\Screenloom`）；**当前仅 CLI** |
+| `--record-out PATH` | 指定录制输出文件（必须是 `.mp4`） |
+| `--record-monitor N` | 录制指定显示器下标（默认主显示器） |
 | `--hotkey KEY` | 临时覆盖热键，如 `Ctrl+Shift+A` / `Alt+F9` |
 | `--config PATH` | 指定配置文件 |
 | `--theme PATH` | 主题覆盖 JSON（配色/圆角）；**文件改了自动热重载**，不用重启 |
@@ -124,6 +127,17 @@ cargo build --release -p screenloom-app --bins --examples
 >
 > ⚠️ 本机目前**没有 key**，所以 `--ask` / `--translate` / `--ai-mosaic` 的**真实端到端调用尚未验证**。
 > 已验证的是：请求体构造、响应解析、bbox 解析、以及两家端点都拿到 **HTTP 401**（DNS + TLS + HTTP + 请求头格式全对，只差 key）。
+
+### 录屏（当前为 CLI 最小链路）
+
+| 项 | 说明 |
+|---|---|
+| 入口 | 仅命令行 `--record N`；**没有**热键、托盘菜单、REC HUD |
+| 目标 | 单显示器、原生分辨率；默认 30 fps / 8 Mbps（当前写死） |
+| 链路 | WGC 持续抓帧 → BGRA→NV12（BT.709 / full range）→ Media Foundation SinkWriter → H.264 / MP4 |
+| 输出 | `%USERPROFILE%\Videos\Screenloom\<时间戳>.mp4` |
+| 尚不支持 | 音频（系统声/麦克风）、暂停/继续、区域/窗口/整块虚拟屏、录制配置、崩溃恢复 |
+| 完整需求 | `doc/录屏功能需求.md`（REC-01～REC-108，按 P0/P1/P2 分阶段） |
 
 ### 三处入口（都能打开同一个设置窗口）
 
@@ -314,7 +328,7 @@ cargo run -p screenloom-app --example ocr_probe
 | 新工具栏按钮 | ① `toolbar.rs` 加 `ItemKind` 变体 + `measure()` 宽度 + `build()` 布局 + `paint()` 标签；② `overlay.rs` 加分支（必要时加 `OverlayAction` 变体）；③ `screenloom-app/src/flow.rs` 装 handler / 处理 action。**宽度一定要同步改 `measure()`**，否则工具栏排版错位 |
 | 新 AI 能力 | `screenloom-app/src/ai.rs`（OpenAI 兼容接口，DeepSeek / MiniMax 共用） |
 | 新抓屏后端 | `screenloom-capture/`（WGC 为主，GDI 兜底） |
-| **录屏** | 方案已论证（见 `doc/录屏方案.md`）：`core/src/nv12.rs`（色彩转换）+ `capture/src/stream.rs`（持续帧源）+ `app/src/record/`（MF 编码器）+ `ui/src/recorder_hud.rs`（REC 浮窗） |
+| **录屏** | 已落地 CLI 最小链路：`core/src/nv12.rs`（色彩转换）+ `capture/src/stream.rs`（持续帧源）+ `app/src/record/`（MF 编码器 + `--record`）。热键/托盘/HUD/音频/暂停等用户功能见 `doc/录屏功能需求.md` |
 | 图标 | `screenloom-core/src/icon.rs` → `cargo run -p screenloom-app --example gen_icon` |
 
 新增 Win32 API 后，**在 `doc/实现契约.md` 附录 B.3 记一条坑**（那里 42 条全是真机踩出来的）。
@@ -330,7 +344,7 @@ cargo run -p screenloom-app --example ocr_probe
 | 自动滚动长截图 | 只做「用户滚动 + 自动匹配拼接」，不做微信那种自动滚 |
 | 长截图拼接未做真机滚动实测 | 入口链路（按钮 → 提示窗 → 落盘 + 复制）**已用 E2E 验证**；但 `match_offset` / `splice` 在**真实滚动页面**上的拼接效果还没实测 |
 | 多屏 DPI | `screenloom-ui` 单一 `scale` 假设全虚拟屏同 DPI |
-| **录屏未实现** | 方案已论证（`doc/录屏方案.md`），**代码尚未落地**，当前无任何录屏入口 |
+| **录屏仅 CLI 最小链路** | 已实现单显示器、固定 30 fps / 8 Mbps 的 H.264/MP4 录制；**没有**热键/托盘/HUD/音频/暂停/区域/窗口入口。用户可用功能与验收见 `doc/录屏功能需求.md` |
 | 标注填充 | 形状填充固定 30% alpha |
 | 工具栏位置 | 固定在虚拟屏底部 |
 | 设置窗口无滚动条 | 内容高度由布局常量决定（客户区 829 物理像素 @1.25，适配 12 个字段）；加字段需重算 `compute_layout` |
@@ -345,6 +359,7 @@ cargo run -p screenloom-app --example ocr_probe
 |---|---|
 | `doc/WeChat4-截图工具逆向规格书.md` | 微信 4.x 截图工具的逆向分析（函数、结构、行为） |
 | `doc/实现契约.md` | **实现准绳**：分层约定、类型签名、事件流、AI 契约、设置窗口契约、Win32 坑位、验收清单 |
-| `doc/录屏方案.md` | **录屏**的可行性论证与落地设计（MF 编码链路实测证据 + 踩坑清单 + 可借鉴的开源项目 + 风险 + 分阶段），**实施尚未开始** |
+| `doc/录屏方案.md` | **录屏预研**：可行性论证与落地设计（MF 编码链路实测证据 + 踩坑清单 + 可借鉴的开源项目 + 风险 + 分阶段）；M0 基础链路已落地 |
+| `doc/录屏功能需求.md` | **录屏功能需求**：入口/目标/音视频/控制/HUD/配置/可靠性/验收清单（REC-01～REC-108）+ P0/P1/P2 实施计划 |
 
 `实现契约.md` §3 的类型签名**即契约，不得擅自更改**；改实现要同步改文档。
