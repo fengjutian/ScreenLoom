@@ -1,4 +1,3 @@
-
 use super::*;
 use windows::Win32::Foundation::RECT;
 
