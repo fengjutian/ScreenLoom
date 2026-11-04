@@ -16,6 +16,9 @@ license = "MIT"
 [workspace.dependencies]
 windows = "0.61"
 png = "0.17"
+# 二维码识别（纯 Rust 解码器）。rqrr 0.10.1 的 MSRV=1.64，兼容本项目 rust-version 1.75。
+# default-features = false：不启用 img feature，避免额外引入 image crate。
+rqrr = { version = "0.10.1", default-features = false }
 # AI 接入：只加两个纯 Rust 依赖（无 C 编译器需求）
 serde_json = "1"
 base64 = "0.22"

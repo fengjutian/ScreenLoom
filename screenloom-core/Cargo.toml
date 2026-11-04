@@ -8,3 +8,4 @@ description = "screenloom 纯逻辑层：几何、图像、标注模型、拼接
 
 [dependencies]
 png = { workspace = true }
+rqrr = { workspace = true }

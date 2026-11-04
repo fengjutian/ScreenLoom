@@ -16,11 +16,12 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use screenloom_core::{
-    sample_color, Annotation, Canvas, Point, Rect, Result, Rgba, RgbaImage, ShapeKind, Tool,
-    BORDER, MASK_ALPHA, TEXT,
+    inpaint::inpaint_region, sample_color, Annotation, Canvas, Point, Rect, Result, Rgba, RgbaImage,
+    ShapeKind, Tool, BORDER, MASK_ALPHA, TEXT,
 };
 
 use crate::aipanel;
+use crate::colorpanel;
 use crate::gdiplus::{self, Graphics};
 use crate::render::{paint_annotations, pargb_to_rgba};
 use crate::toolbar::{ItemKind, Mapper, Toolbar};
@@ -33,6 +34,12 @@ const CLASS_NAME: &str = "ScreenloomOverlayWindow";
 /// app 层在**后台线程**里调完模型后，用 [`post_ai_reply`] 把结果送到浮窗；
 /// 浮窗的消息循环收到它再刷新界面 —— 这样 AI 调用**不会卡住 UI 线程**。
 pub const WM_AI_REPLY: u32 = WM_APP + 1;
+
+/// 窗口选择结果回投用的自定义窗口消息。
+///
+/// app 层弹出「窗口选择器」后，用 [`post_window_picked`] 把用户选中的窗口矩形
+/// 送回浮窗；浮窗收到后把选区切到那个窗口。
+pub const WM_WINDOW_PICKED: u32 = WM_APP + 2;
 
 /// 浮窗发给 app 层的 AI 请求。
 #[derive(Clone, Debug)]
@@ -70,6 +77,10 @@ pub struct MosaicRect {
 }
 
 /// app 层回给浮窗的 AI 结果。
+///
+/// 这个类型不只装 AI 的回复 —— **任何异步回投**都走它
+/// （OCR 文本、二维码内容…），因为它们共用同一套
+/// 「后台线程 → [`post_ai_reply`] → 浮窗刷新」的管道。
 #[derive(Clone, Debug, PartialEq)]
 pub enum AiReply {
     /// 文本结果（回答 / 译文）。
@@ -78,6 +89,8 @@ pub enum AiReply {
     Error(String),
     /// 打码区域（相对选区左上角的像素）。
     MosaicRegions(Vec<MosaicRect>),
+    /// 识别到的二维码内容（每个码一条文本）。
+    QrCodes(Vec<String>),
 }
 
 /// 把 AI 结果送回浮窗（**可从后台线程调用**）。
@@ -87,6 +100,16 @@ pub fn post_ai_reply(hwnd: HWND, reply: AiReply) {
     let boxed = Box::into_raw(Box::new(reply));
     unsafe {
         let _ = PostMessageW(Some(hwnd), WM_AI_REPLY, WPARAM(0), LPARAM(boxed as isize));
+    }
+}
+
+/// 把「用户选中的窗口矩形」送回浮窗（**可从后台线程调用**）。
+///
+/// 矩形是**背景帧内的物理像素坐标**（与 [`OverlayOutcome::Selected::region`] 同坐标系）。
+pub fn post_window_picked(hwnd: HWND, region: Rect) {
+    let boxed = Box::into_raw(Box::new(region));
+    unsafe {
+        let _ = PostMessageW(Some(hwnd), WM_WINDOW_PICKED, WPARAM(0), LPARAM(boxed as isize));
     }
 }
 

@@ -51,6 +51,12 @@ pub(crate) enum ItemKind {
     ExtractText,
     /// 滚动截图（对当前选区做滚动拼接）
     LongShot,
+    /// 识别选区里的二维码（本地解码，不需要 API key）
+    QrCode,
+    /// 消除杂物（对选区内的物体做内容填充）
+    Erase,
+    /// 窗口选择器（列出可捕获窗口，挑一个作为选区）
+    WindowPick,
     /// 打开设置窗口
     Settings,
     /// 完成 —— 结束编辑并把结果交回 app 层
@@ -165,6 +171,9 @@ impl Toolbar {
                 ItemKind::AiMosaic => self.paint_button(g, "AI打码", ir, m, true),
                 ItemKind::ExtractText => self.paint_button(g, "提取文字", ir, m, true),
                 ItemKind::LongShot => self.paint_button(g, "滚动截图", ir, m, true),
+                ItemKind::QrCode => self.paint_button(g, "识别二维码", ir, m, true),
+                ItemKind::Erase => self.paint_button(g, "消除杂物", ir, m, true),
+                ItemKind::WindowPick => self.paint_button(g, "窗口选择", ir, m, true),
                 ItemKind::Settings => self.paint_button(g, "设置", ir, m, true),
                 ItemKind::Complete => self.paint_button(g, "完成", ir, m, true),
                 ItemKind::Copy => self.paint_button(g, "复制", ir, m, true),
@@ -432,11 +441,13 @@ fn measure(factor: f32) -> i32 {
     let ai = 52.0 * s + 52.0 * s + 68.0 * s;
     // 提取文字 / 滚动截图
     let extra = 68.0 * s + 68.0 * s;
+    // 识别二维码 / 消除杂物 / 窗口选择
+    let more = 68.0 * s + 68.0 * s + 68.0 * s;
     let actions = 52.0 * s + 44.0 * s + 44.0 * s + 68.0 * s + 82.0 * s + 44.0 * s;
     let toggle = TOGGLE_W as f32 * s;
     let seps = 6.0 * (SEP as f32 * s);
     let pad = 2.0 * (PAD as f32 * s);
-    (tools + palette + step + undo + ai + extra + actions + toggle + seps + pad) as i32
+    (tools + palette + step + undo + ai + extra + more + actions + toggle + seps + pad) as i32
 }
 
 /// 生成工具栏条目（逻辑坐标）。
@@ -539,6 +550,9 @@ fn build(rect: Rect, factor: f32) -> Vec<Item> {
     push(ItemKind::AiMosaic, &mut x, y, a(68.0), bh, &mut items);
     push(ItemKind::ExtractText, &mut x, y, a(68.0), bh, &mut items);
     push(ItemKind::LongShot, &mut x, y, a(68.0), bh, &mut items);
+    push(ItemKind::QrCode, &mut x, y, a(68.0), bh, &mut items);
+    push(ItemKind::Erase, &mut x, y, a(68.0), bh, &mut items);
+    push(ItemKind::WindowPick, &mut x, y, a(68.0), bh, &mut items);
     push(ItemKind::Settings, &mut x, y, a(52.0), bh, &mut items);
     push(ItemKind::Complete, &mut x, y, a(44.0), bh, &mut items);
     push(ItemKind::Copy, &mut x, y, a(44.0), bh, &mut items);

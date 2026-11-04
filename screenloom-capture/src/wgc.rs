@@ -53,9 +53,12 @@ const MAX_SIZE_RETRIES: u32 = 4;
 /// 字段声明顺序 = 析构顺序：`winrt_device`（WinRT 对象）必须先于 `_apartment` 释放，
 /// 这样它析构时套间仍然有效。
 pub struct WgcBackend {
-    device: ID3D11Device,
-    context: ID3D11DeviceContext,
-    winrt_device: IDirect3DDevice,
+    /// D3D11 设备。`pub(crate)` 是给同 crate 的 [`crate::stream`]（录屏帧源）用的。
+    pub(crate) device: ID3D11Device,
+    /// D3D11 上下文。同上。
+    pub(crate) context: ID3D11DeviceContext,
+    /// WinRT 设备（帧池要用它创建）。`pub(crate)` 给同 crate 的 [`crate::stream`] 用。
+    pub(crate) winrt_device: IDirect3DDevice,
     /// 套间守卫：随本结构体一起存活，保证 WinRT 对象的生命周期落在套间之内。
     _apartment: ComApartment,
 }
@@ -267,8 +270,14 @@ impl WgcBackend {
         outcome
     }
 
-    /// 把 GPU 帧纹理拷到 staging 纹理并读回像素。
-    fn read_frame(&self, frame: &Direct3D11CaptureFrame) -> Result<RgbaImage> {
+    /// 把 GPU 帧纹理拷到 staging 纹理并读回像素（**原始 BGRA**，不做通道转换）。
+    ///
+    /// 录屏路径需要 BGRA（编码器要 NV12，中间不该多一次 BGRA→RGBA 转换），
+    /// 所以这里只做「GPU→CPU 读回」，通道转换交给调用方。
+    pub(crate) fn read_frame_bgra(
+        &self,
+        frame: &Direct3D11CaptureFrame,
+    ) -> Result<(u32, u32, Vec<u8>)> {
         // SAFETY: 以下全部是对 frame 内部 COM 对象的合法调用。
         unsafe {
             let surface = frame
@@ -324,9 +333,15 @@ impl WgcBackend {
             }
             self.context.Unmap(&staging, 0);
 
-            // WGC 帧是 BGRA，交给 from_bgra 做通道转换。
-            Ok(RgbaImage::from_bgra(w, h, &data))
+            Ok((w, h, data))
         }
+    }
+
+    /// 把 GPU 帧纹理拷到 staging 纹理并读回像素。
+    fn read_frame(&self, frame: &Direct3D11CaptureFrame) -> Result<RgbaImage> {
+        let (w, h, data) = self.read_frame_bgra(frame)?;
+        // WGC 帧是 BGRA，交给 from_bgra 做通道转换。
+        Ok(RgbaImage::from_bgra(w, h, &data))
     }
 }
 
@@ -372,14 +387,14 @@ fn wgc_supported() -> windows::core::Result<bool> {
 }
 
 /// 由窗口句柄创建捕获项。
-fn create_item_for_window(hwnd: HWND) -> windows::core::Result<GraphicsCaptureItem> {
+pub(crate) fn create_item_for_window(hwnd: HWND) -> windows::core::Result<GraphicsCaptureItem> {
     let interop = capture_item_interop()?;
     // SAFETY: hwnd 已校验存在性。
     unsafe { interop.CreateForWindow::<GraphicsCaptureItem>(hwnd) }
 }
 
 /// 由显示器句柄创建捕获项（需要 Win10 2004+）。
-fn create_item_for_monitor(
+pub(crate) fn create_item_for_monitor(
     hmon: windows::Win32::Graphics::Gdi::HMONITOR,
 ) -> windows::core::Result<GraphicsCaptureItem> {
     let interop = capture_item_interop()?;
@@ -398,7 +413,7 @@ fn capture_item_interop() -> windows::core::Result<IGraphicsCaptureItemInterop> 
 /// 离开时配对反初始化。若线程本来已经是 STA，则不改动（WinRT 已按 STA 初始化）。
 ///
 /// **必须让它活得比在套间里创建的 WinRT 对象更久**，否则析构 WinRT 对象时套间已经没了。
-struct ComApartment {
+pub(crate) struct ComApartment {
     com: bool,
     winrt: bool,
 }

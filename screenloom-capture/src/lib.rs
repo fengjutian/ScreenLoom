@@ -17,6 +17,7 @@ use windows::Win32::Foundation::HWND;
 mod errors;
 mod gdi;
 mod monitors;
+mod stream;
 mod virtual_screen;
 mod wgc;
 
@@ -25,6 +26,7 @@ pub use gdi::GdiBackend;
 pub use monitors::{
     ensure_dpi_awareness, list_monitors, virtual_screen_origin, virtual_screen_size,
 };
+pub use stream::{BgraFrame, ScreenStream};
 pub use virtual_screen::capture_virtual_screen;
 pub use wgc::WgcBackend;
 

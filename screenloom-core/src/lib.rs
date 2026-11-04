@@ -15,6 +15,7 @@ pub mod error;
 pub mod geometry;
 pub mod icon;
 pub mod image;
+pub mod nv12;
 pub mod stitch;
 
 pub use annotation::{Annotation, ShapeKind, Tool};
@@ -25,4 +26,5 @@ pub use error::{Error, Result};
 pub use geometry::{Point, Rect, Size};
 pub use icon::{draw_app_icon, pack_ico};
 pub use image::{sample_color, Rgba, RgbaImage};
+pub use nv12::{bgra_to_nv12, bgra_to_nv12_into, nv12_bytes_len, Nv12Image};
 pub use stitch::{match_offset, splice};

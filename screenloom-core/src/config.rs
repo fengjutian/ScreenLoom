@@ -35,6 +35,17 @@ pub struct Config {
     pub hotkey: String,
     /// 截图时隐藏本工具自身窗口
     pub hide_self: bool,
+    /// 隐私模式：本工具的**所有**窗口（浮窗 / 设置窗 / 贴图窗）对屏幕捕获不可见。
+    ///
+    /// 对齐微信的 `clicfg_screen_privacy` / `gScreenPrivacyEnabled`。
+    /// 与 [`Config::hide_self`] 的区别：`hide_self` 是「截图前把自己藏起来」，
+    /// 隐私模式是「**别人**截图时看不到我们」（`WDA_EXCLUDEFROMCAPTURE`）。
+    pub privacy_mode: bool,
+    /// 按窗口排除抓屏：截图时把这些窗口从结果里去掉。
+    ///
+    /// 条目格式 `标题|类名`，多个条目用 `;` 分隔。
+    /// 存标题+类名而不是 HWND —— HWND 每次启动都会变。
+    pub exclude_windows: Vec<String>,
     /// 工具栏折叠（对齐微信 `clicfg_pc_screenshot_toolbar_collapse`）
     pub toolbar_collapsed: bool,
     /// 复制到剪贴板的格式
@@ -66,6 +77,8 @@ impl Default for Config {
         Config {
             hotkey: "Alt+A".to_string(),
             hide_self: true,
+            privacy_mode: false,
+            exclude_windows: Vec::new(),
             toolbar_collapsed: false,
             copy_format: CopyFormat::Both,
             long_screenshot_max: 0,
@@ -104,6 +117,16 @@ impl Config {
             match k {
                 "hotkey" => cfg.hotkey = v.to_string(),
                 "hide_self" => cfg.hide_self = parse_bool(v).unwrap_or(cfg.hide_self),
+                "privacy_mode" => cfg.privacy_mode = parse_bool(v).unwrap_or(cfg.privacy_mode),
+                // 空值 = 不排除任何窗口；条目之间用 `;` 分隔。
+                "exclude_windows" => {
+                    cfg.exclude_windows = v
+                        .split(';')
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .collect();
+                }
                 "toolbar_collapsed" => {
                     cfg.toolbar_collapsed = parse_bool(v).unwrap_or(cfg.toolbar_collapsed)
                 }
@@ -145,6 +168,8 @@ impl Config {
             "# screenloom 配置\n\
              hotkey = {}\n\
              hide_self = {}\n\
+             privacy_mode = {}\n\
+             exclude_windows = {}\n\
              toolbar_collapsed = {}\n\
              copy_format = {}\n\
              long_screenshot_max = {}\n\
@@ -160,6 +185,8 @@ impl Config {
              ai_timeout = {}\n",
             self.hotkey,
             self.hide_self,
+            self.privacy_mode,
+            self.exclude_windows.join(";"),
             self.toolbar_collapsed,
             match self.copy_format {
                 CopyFormat::Png => "png",
@@ -223,6 +250,27 @@ impl Config {
     }
 }
 
+/// 生成一个「排除窗口」条目（`标题|类名`）。
+///
+/// 标题 / 类名里的 `|` 和 `;` 会被替换掉 —— 它们是本格式的分隔符。
+pub fn exclude_entry(title: &str, class: &str) -> String {
+    let clean = |s: &str| {
+        s.chars()
+            .map(|c| if c == '|' || c == ';' { ' ' } else { c })
+            .collect::<String>()
+    };
+    format!("{}|{}", clean(title), clean(class))
+}
+
+/// 解析一个「排除窗口」条目（`标题|类名`）。
+///
+/// 格式不对时返回 `None`。
+pub fn parse_exclude_entry(s: &str) -> Option<(String, String)> {
+    let s = s.trim();
+    let (title, class) = s.split_once('|')?;
+    Some((title.trim().to_string(), class.trim().to_string()))
+}
+
 /// `%APPDATA%` 根目录；取不到时退回当前目录。
 fn appdata_dir() -> PathBuf {
     std::env::var_os("APPDATA")
@@ -276,5 +324,41 @@ mod tests {
         let cfg = Config::load(&path).unwrap();
         assert!(cfg.default_dir.is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn privacy_mode_and_exclude_windows_roundtrip() {
+        let dir = std::env::temp_dir().join("screenloom-cfg-privacy");
+        let path = dir.join("config.txt");
+        let cfg = Config {
+            privacy_mode: true,
+            exclude_windows: vec![
+                exclude_entry("记事本", "Notepad"),
+                exclude_entry("微信", "WeChatMainWndForPC"),
+            ],
+            ..Config::default()
+        };
+        cfg.save(&path).unwrap();
+        let back = Config::load(&path).unwrap();
+        assert!(back.privacy_mode);
+        assert_eq!(back.exclude_windows.len(), 2);
+        assert_eq!(
+            parse_exclude_entry(&back.exclude_windows[0]),
+            Some(("记事本".to_string(), "Notepad".to_string()))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exclude_entry_sanitizes_separators() {
+        // `|` 和 `;` 是条目分隔符，标题里出现必须被替换掉
+        let e = exclude_entry("a|b;c", "d|e");
+        assert_eq!(e, "a b c|d e");
+        assert_eq!(parse_exclude_entry(&e).unwrap().0, "a b c");
+    }
+
+    #[test]
+    fn parse_exclude_entry_rejects_malformed() {
+        assert_eq!(parse_exclude_entry("没有分隔符"), None);
     }
 }
