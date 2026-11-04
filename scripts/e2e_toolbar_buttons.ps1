@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 $Root    = 'D:\github\screenloom'
 $Exe     = Join-Path $Root 'target\release\screenloom.exe'
 $CfgPath = Join-Path $Root 'e2e_config.txt'
-$OutDir  = Join-Path $Root 'e2e_out'
+$OutDir  = Join-Path $Root 'probes\e2e_out'
 $SaveDir = Join-Path $env:USERPROFILE 'Pictures\Screenloom'
 $ErrLog  = Join-Path $OutDir 'toolbar_app.err.log'
 

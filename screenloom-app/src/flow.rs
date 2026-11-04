@@ -9,11 +9,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use screenloom_capture::{
-    capture_virtual_screen, default_backend, list_monitors, virtual_screen_origin,
+    capture_virtual_screen, default_backend, list_capture_windows, list_monitors,
+    virtual_screen_origin,
 };
-use screenloom_core::{Config, Error, Result};
+use screenloom_core::{parse_exclude_entry, Config, Error, Rect, Result, RgbaImage};
 use screenloom_ui::{
-    render_annotations, AiReply, Overlay, OverlayAction, OverlayConfig, OverlayOutcome, PinWindow,
+    post_ai_reply, post_window_picked, render_annotations, AiReply, Overlay, OverlayAction,
+    OverlayConfig, OverlayOutcome, PinWindow,
 };
 
 /// 热键 ID（任意非零值即可）。
@@ -24,7 +26,7 @@ pub fn run_hotkey_loop(cfg: &Config, cfg_path: &std::path::Path) -> Result<()> {
     let hk = crate::hotkey::Hotkey::register(HWND(std::ptr::null_mut()), HOTKEY_ID, &cfg.hotkey)?;
     println!("screenloom 已启动，热键：{}", cfg.hotkey);
 
-    // 托盘图标：左键截图 / 右键菜单（截图·设置·退出）
+    // 托盘图标：左键截图 / 右键菜单（截图·设置·排除窗口·退出）
     let cfg_owned = cfg.clone();
     let path_owned = cfg_path.to_path_buf();
     let tray = crate::tray::Tray::new(move |cmd| match cmd {
@@ -38,11 +40,19 @@ pub fn run_hotkey_loop(cfg: &Config, cfg_path: &std::path::Path) -> Result<()> {
                 eprintln!("设置失败: {e}");
             }
         }
+        crate::tray::TrayCommand::ExcludeWindows => {
+            if let Err(e) = edit_exclude_windows(&cfg_owned, &path_owned) {
+                eprintln!("设置排除窗口失败: {e}");
+            }
+        }
         crate::tray::TrayCommand::Exit => unsafe {
             windows::Win32::UI::WindowsAndMessaging::PostQuitMessage(0);
         },
     })?;
     println!("托盘图标已就绪（左键截图，右键菜单）");
+
+    // 隐私模式守护：本工具的窗口对屏幕捕获不可见（每隔 1 秒重申一次）。
+    let mut _privacy = crate::privacy::PrivacyGuard::start(cfg_path);
 
     let mut msg = MSG::default();
     loop {
@@ -87,10 +97,13 @@ pub fn run_capture(
 
     // 抓 **整块虚拟屏**：浮窗铺在虚拟屏上，它要的就是一整张虚拟屏图像
     // （图像内坐标 = 虚拟屏物理坐标 − virtual_origin）。
-    let frame = capture_virtual_screen(backend.as_ref())?;
+    let mut frame = capture_virtual_screen(backend.as_ref())?;
     if frame.image.w == 0 || frame.image.h == 0 {
         return Err(Error::Capture("捕获到空图像".into()));
     }
+
+    // 按窗口排除抓屏：把配置里指定的窗口从截图里去掉（内容抹成平均色）。
+    apply_excluded_windows(&mut frame.image, cfg, frame.bounds);
 
     let mut overlay = Overlay::new(OverlayConfig {
         virtual_origin: virtual_screen_origin(),
@@ -116,6 +129,15 @@ pub fn run_capture(
 
     // 工具栏「提取文字」按钮 → 本地 OCR（**不需要 API key**，无条件装上）
     install_ocr_handler(&mut overlay);
+
+    // 工具栏「识别二维码」按钮 → 本地解码（**不需要 API key**，无条件装上）
+    install_qr_handler(&mut overlay);
+
+    // 色值复制 → 剪贴板（剪贴板在 app 层，浮窗只发请求）
+    install_clipboard_handler(&mut overlay);
+
+    // 工具栏「窗口选择」按钮 → 弹出窗口选择器，选中的窗口回投给浮窗
+    install_window_picker_handler(&mut overlay, frame.bounds);
 
     // 脚本化模式：直接给定选区（虚拟屏物理坐标），无需鼠标交互。
     if let Some(vrect) = sel {

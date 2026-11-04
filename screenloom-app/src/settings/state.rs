@@ -76,6 +76,7 @@ impl State {
             set_text(*hwnd, &text);
         }
         self.checks.insert(Field::HideSelf, self.cfg.hide_self);
+        self.checks.insert(Field::PrivacyMode, self.cfg.privacy_mode);
         self.checks
             .insert(Field::ToolbarCollapsed, self.cfg.toolbar_collapsed);
         self.combos.insert(
@@ -104,6 +105,7 @@ impl State {
             cfg.hotkey = t(Field::Hotkey).trim().to_string();
         }
         cfg.hide_self = *self.checks.get(&Field::HideSelf).unwrap_or(&false);
+        cfg.privacy_mode = *self.checks.get(&Field::PrivacyMode).unwrap_or(&false);
         cfg.toolbar_collapsed = *self.checks.get(&Field::ToolbarCollapsed).unwrap_or(&false);
         cfg.copy_format = match self.combos.get(&Field::CopyFormat).copied().unwrap_or(0) {
             1 => CopyFormat::Png,

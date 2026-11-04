@@ -80,6 +80,83 @@ impl RecordOptions {
     }
 }
 
+/// 定速写帧的时间轴。
+///
+/// 负责两件事：
+/// 1. **节流**：不到点就不写帧（保证输出恒定帧率）。
+/// 2. **合成时间戳**：`pts = 已写帧数 × 帧间隔`（100 ns 单位）→ 输出严格 CFR。
+///
+/// 机器卡顿时**不补写风暴**：落后太多就把时间轴重新对齐到当前时刻。
+#[derive(Clone, Debug)]
+pub struct FramePacer {
+    /// 帧间隔（墙钟）
+    interval: Duration,
+    /// 一帧的时长（100 ns）
+    duration_100ns: i64,
+    /// 下一次该写帧的墙钟时刻
+    next_write: Instant,
+    /// 下一个样本的时间戳（100 ns）
+    pts: i64,
+    /// 已写帧数
+    frames: u64,
+}
+
+impl FramePacer {
+    /// 以 `start` 为起点创建时间轴。
+    pub fn new(fps: u32, start: Instant) -> FramePacer {
+        let fps = fps.max(1);
+        FramePacer {
+            interval: Duration::from_nanos(1_000_000_000 / fps as u64),
+            duration_100ns: 10_000_000 / fps as i64,
+            next_write: start,
+            pts: 0,
+            frames: 0,
+        }
+    }
+
+    /// 到点了吗？到点则推进时间轴并返回该帧应使用的 pts（100 ns）。
+    pub fn tick(&mut self, now: Instant) -> Option<i64> {
+        if now < self.next_write {
+            return None;
+        }
+        let pts = self.pts;
+        self.pts += self.duration_100ns;
+        self.frames += 1;
+        self.next_write += self.interval;
+        // 落后太多（机器卡了 / 长时间没帧）→ 重新对齐，不要一口气补写一堆帧
+        if self.next_write < now {
+            self.next_write = now + self.interval;
+        }
+        Some(pts)
+    }
+
+    /// 已写帧数。
+    pub fn frames(&self) -> u64 {
+        self.frames
+    }
+
+    /// 下一个样本的时间戳（100 ns）。
+    pub fn pts(&self) -> i64 {
+        self.pts
+    }
+
+    /// 一帧的时长（100 ns）。
+    pub fn duration_100ns(&self) -> i64 {
+        self.duration_100ns
+    }
+
+    /// 距离下一次该写帧还有多久（已到点则为 0）。
+    pub fn next_write_after(&self, now: Instant) -> Duration {
+        self.next_write.saturating_duration_since(now)
+    }
+
+    /// 手动推进一帧（补帧用：时间戳继续往后走，但不改变墙钟节奏）。
+    pub fn advance(&mut self) {
+        self.pts += self.duration_100ns;
+        self.frames += 1;
+    }
+}
+
 /// 录制结果。
 #[derive(Clone, Debug)]
 pub struct RecordOutcome {
@@ -109,12 +186,9 @@ pub fn record(opts: &RecordOptions) -> Result<RecordOutcome> {
     let mut nv12 = vec![0u8; nv12_bytes_len(w, h)];
     let mut have_frame = false;
 
-    let interval = Duration::from_nanos(1_000_000_000 / opts.fps.max(1) as u64);
-    let duration_100ns = 10_000_000 / opts.fps.max(1) as i64;
     let start = Instant::now();
-    let mut pts: i64 = 0;
+    let mut pacer = FramePacer::new(opts.fps, start);
     let mut frames: u64 = 0;
-    let mut next_write = start;
 
     loop {
         // 1) 取最新帧（积压的旧帧在流里已被丢弃）
@@ -128,16 +202,12 @@ pub fn record(opts: &RecordOptions) -> Result<RecordOutcome> {
             }
         }
 
-        // 2) 定速写帧
+        // 2) 定速写帧（到点才写）
         let now = Instant::now();
-        if have_frame && now >= next_write {
-            enc.write_frame(&nv12, pts)?;
-            pts += duration_100ns;
-            frames += 1;
-            next_write += interval;
-            // 机器卡顿时不要"补写风暴"：落后太多就重新对齐到当前时刻
-            if next_write < now {
-                next_write = now + interval;
+        if have_frame {
+            if let Some(pts) = pacer.tick(now) {
+                enc.write_frame(&nv12, pts)?;
+                frames += 1;
             }
         }
 
@@ -150,7 +220,7 @@ pub fn record(opts: &RecordOptions) -> Result<RecordOutcome> {
 
         // 4) 睡到下次写帧时刻（但不超过轮询间隔，保证能及时取到新帧）
         let now = Instant::now();
-        let until_write = next_write.saturating_duration_since(now);
+        let until_write = pacer.next_write_after(now);
         let sleep = until_write.min(POLL_INTERVAL);
         if !sleep.is_zero() {
             std::thread::sleep(sleep);
@@ -160,8 +230,9 @@ pub fn record(opts: &RecordOptions) -> Result<RecordOutcome> {
     // 5) 补帧：把最后一帧再写几遍，填上编码器丢掉的尾巴
     if have_frame {
         for _ in 0..TAIL_PADDING_FRAMES {
+            let pts = pacer.pts();
             enc.write_frame(&nv12, pts)?;
-            pts += duration_100ns;
+            pacer.advance();
             frames += 1;
         }
     }
@@ -218,5 +289,46 @@ mod tests {
         assert!(check_out_ext(Path::new("a.MP4")).is_ok());
         assert!(check_out_ext(Path::new("a.avi")).is_err());
         assert!(check_out_ext(Path::new("a")).is_err());
+    }
+
+    #[test]
+    fn pacer_emits_synthetic_cfr_timestamps() {
+        let t0 = Instant::now();
+        let mut p = FramePacer::new(30, t0);
+        // 第 1 帧：立刻
+        assert_eq!(p.tick(t0), Some(0));
+        // 还没到点（10 ms < 33.3 ms）→ 不写
+        assert_eq!(p.tick(t0 + Duration::from_millis(10)), None);
+        // 到点 → pts 递增一个帧间隔
+        let pts2 = p.tick(t0 + Duration::from_millis(34)).unwrap();
+        assert_eq!(pts2, 333_333);
+        let pts3 = p.tick(t0 + Duration::from_millis(67)).unwrap();
+        assert_eq!(pts3, 666_666);
+        assert_eq!(p.frames(), 3);
+    }
+
+    #[test]
+    fn pacer_does_not_burst_after_a_stall() {
+        let t0 = Instant::now();
+        let mut p = FramePacer::new(30, t0);
+        assert_eq!(p.tick(t0), Some(0));
+        // 卡了 5 秒 → 只应该补 1 帧，而不是一口气补 150 帧
+        let mut written = 1;
+        let now = t0 + Duration::from_secs(5);
+        while let Some(_pts) = p.tick(now) {
+            written += 1;
+            assert!(written < 10, "卡顿后不应补写大量帧，实际写了 {written} 帧");
+        }
+        assert_eq!(written, 2, "卡顿后应只补 1 帧");
+    }
+
+    #[test]
+    fn pacer_advance_moves_pts_only() {
+        let t0 = Instant::now();
+        let mut p = FramePacer::new(30, t0);
+        assert_eq!(p.tick(t0), Some(0));
+        p.advance();
+        assert_eq!(p.pts(), 333_333);
+        assert_eq!(p.frames(), 2);
     }
 }

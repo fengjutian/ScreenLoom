@@ -14,7 +14,9 @@ public class TrayProbe2 {
 [void][TrayProbe2]::SetProcessDpiAwarenessContext([IntPtr](-4))
 Add-Type -AssemblyName System.Drawing
 
-$out = 'D:\github\screenloom\e2e_out\tray_overflow_zoom.png'
+$outDir = 'D:\github\screenloom\probes\e2e_out'
+if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Force -Path $outDir | Out-Null }
+$out = "$outDir\tray_overflow_zoom.png"
 
 [TrayProbe2]::Click(1507, 1050)
 Start-Sleep -Milliseconds 1500

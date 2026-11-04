@@ -10,7 +10,8 @@
 . "$PSScriptRoot\_shotlib.ps1"
 
 $exe    = 'D:\github\screenloom\target\release\screenloom.exe'
-$outDir = 'D:\github\screenloom\e2e_out'
+$outDir = 'D:\github\screenloom\probes\e2e_out'
+if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Force -Path $outDir | Out-Null }
 $cfg    = "$env:TEMP\screenloom_shot_cfg.txt"
 
 Get-Process -Name 'screenloom' -ErrorAction SilentlyContinue | Stop-Process -Force

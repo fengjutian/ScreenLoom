@@ -17,7 +17,7 @@ $Root      = 'D:\github\screenloom'
 $Exe       = Join-Path $Root 'target\release\screenloom.exe'
 $Manifest  = Join-Path $Root 'Cargo.toml'
 $CfgPath   = Join-Path $Root 'e2e_config.txt'
-$OutDir    = Join-Path $Root 'e2e_out'
+$OutDir    = Join-Path $Root 'probes\e2e_out'
 $SaveDir   = Join-Path $env:USERPROFILE 'Pictures\Screenloom'
 
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }

@@ -43,7 +43,9 @@ public class TrayProbe {
 
 Add-Type -AssemblyName System.Drawing
 
-$out = 'D:\github\screenloom\e2e_out\tray_overflow.png'
+$outDir = 'D:\github\screenloom\probes\e2e_out'
+if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Force -Path $outDir | Out-Null }
+$out = "$outDir\tray_overflow.png"
 
 # 1) 点 chevron（物理坐标 1507,1050）
 [TrayProbe]::Click(1507, 1050)

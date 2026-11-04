@@ -13,7 +13,8 @@
 . "$PSScriptRoot\_shotlib.ps1"
 
 $exe    = 'D:\github\screenloom\target\release\screenloom.exe'
-$outDir = 'D:\github\screenloom\e2e_out'
+$outDir = 'D:\github\screenloom\probes\e2e_out'
+if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Force -Path $outDir | Out-Null }
 $cfg    = "$env:TEMP\screenloom_hotreload_cfg.txt"
 $theme  = "$env:TEMP\screenloom_hotreload_theme.json"
 

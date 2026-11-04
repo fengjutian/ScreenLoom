@@ -2,16 +2,15 @@
 /target/
 
 # E2E 运行时留证（体积大，且可由 scripts/ 重新生成）
-/e2e_out/
+/probes/e2e_out/
 
 # 临时文件
 *.tmp
 *.log
 
-_mftprobe/target/
-
-# 探针产物（可由 _mftprobe 重新生成，不入库）
-_mftprobe/out/
+# 探针 crate（MF 编码器实验）的构建产物
+/probes/mftprobe/target/
+/probes/mftprobe/out/
 
 # 一次性打补丁脚本（改完即弃）
 _patch*.py

@@ -196,6 +196,11 @@ pub(crate) const SECTIONS: &[Section] = &[
                 trailing: None,
             },
             Row {
+                label: "",
+                widgets: &[W_PRIVACY_MODE],
+                trailing: None,
+            },
+            Row {
                 label: "复制到剪贴板的格式",
                 widgets: &[W_COPY_FORMAT],
                 trailing: None,
@@ -275,6 +280,7 @@ pub(crate) enum FocusItem {
 pub(crate) const FOCUS_ITEMS: &[FocusItem] = &[
     FocusItem::Field(Field::Hotkey),
     FocusItem::Field(Field::HideSelf),
+    FocusItem::Field(Field::PrivacyMode),
     FocusItem::Field(Field::ToolbarCollapsed),
     FocusItem::Field(Field::CopyFormat),
     FocusItem::Field(Field::DefaultDir),

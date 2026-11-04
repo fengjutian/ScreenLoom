@@ -663,6 +663,7 @@ mod tests {
         for f in [
             Field::Hotkey,
             Field::HideSelf,
+            Field::PrivacyMode,
             Field::ToolbarCollapsed,
             Field::CopyFormat,
             Field::DefaultDir,
@@ -681,7 +682,7 @@ mod tests {
                 f
             );
         }
-        assert_eq!(seen.len(), 12, "字段数量变了");
+        assert_eq!(seen.len(), 13, "字段数量变了");
     }
 
     #[test]
