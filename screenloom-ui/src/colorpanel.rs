@@ -56,7 +56,14 @@ pub(crate) fn paint_color_panel(
     // 色块
     let sx = anchor.x + pad;
     let sy = anchor.y + pad;
-    g.fill_round_rect(sx as f32, sy as f32, sw as f32, sw as f32, 4.0, gdiplus::argb(color));
+    g.fill_round_rect(
+        sx as f32,
+        sy as f32,
+        sw as f32,
+        sw as f32,
+        4.0,
+        gdiplus::argb(color),
+    );
     g.draw_round_rect(
         sx as f32,
         sy as f32,
@@ -81,7 +88,7 @@ pub(crate) fn paint_color_panel(
     let rgb = format!("R {}  G {}  B {}", color.r, color.g, color.b);
     g.draw_text(
         tx as f32,
-        sy as f32 + (18.0 * scale).round() as i32,
+        sy as f32 + (18.0 * scale).round(),
         &rgb,
         size,
         gdiplus::argb(Rgba::rgb(0xB0, 0xB0, 0xB0)),
@@ -89,7 +96,11 @@ pub(crate) fn paint_color_panel(
     );
 
     // 提示文案
-    let hint = if copied { "已复制色值" } else { "按 Ctrl+C 复制色值" };
+    let hint = if copied {
+        "已复制色值"
+    } else {
+        "按 Ctrl+C 复制色值"
+    };
     let hint_color = if copied {
         gdiplus::argb(Rgba::rgb(0x00, 0xC3, 0x75))
     } else {
