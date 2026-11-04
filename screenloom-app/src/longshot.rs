@@ -27,7 +27,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use screenloom_capture::{capture_virtual_screen, CaptureBackend};
-use screenloom_core::{match_offset, splice, Config, Error, Rect, Result, RgbaImage};
+use screenloom_core::{append_scroll, match_offset, Config, Error, Rect, Result, RgbaImage};
 
 /// 提示窗上显示的文本（特殊值表示按键事件）。
 static HINT_TEXT: OnceLock<Mutex<String>> = OnceLock::new();
@@ -221,6 +221,9 @@ impl LongShot {
             canvas: first,
         } = self;
         let mut canvas = first;
+        // 模板匹配必须拿「上一屏」比，不能拿已经拼接好的长图比：
+        // 长图高度大于单屏后，match_offset 的坐标系会错，追加量也会算错。
+        let mut prev_view = canvas.clone();
         let hint = HintWindow::new("滚动页面后按 Enter 拼接\n按 Esc 结束长截图")?;
         let mut pieces = 1usize;
 
@@ -235,8 +238,9 @@ impl LongShot {
                     continue;
                 }
             };
-            match match_offset(&canvas, &next, cfg.long_screenshot_search) {
-                Some(dy) if dy != 0 => match splice(&canvas, &next, dy) {
+            let next_view = next.clone();
+            match match_offset(&prev_view, &next, cfg.long_screenshot_search) {
+                Some(dy) if dy != 0 => match append_scroll(&canvas, &next, dy) {
                     Some(merged) => {
                         canvas = merged;
                         pieces += 1;
@@ -256,6 +260,8 @@ impl LongShot {
                     hint.set("截图中断，返回中断位置继续滚动\n按 Enter 重试，按 Esc 结束");
                 }
             }
+            // 下一轮以当前画面为基准，而不是以上一帧成功拼接的旧画面为基准。
+            prev_view = next_view;
 
             if cfg.long_screenshot_max > 0 && canvas.h >= cfg.long_screenshot_max {
                 hint.set("已达最大长度，无法继续截图\n按 Esc 结束");

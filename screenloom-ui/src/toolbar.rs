@@ -437,7 +437,7 @@ impl Mapper {
 /// 工具栏自然宽度（给定缩放系数）。
 fn measure(factor: f32) -> i32 {
     let s = factor;
-    let tools = 7.0 * (BTN as f32 * s);
+    let tools = 8.0 * (BTN as f32 * s);
     let palette = 9.0 * ((SWATCH as f32 + SWATCH_GAP as f32) * s);
     let step = 2.0 * (78.0 * s); // 线宽组 + 字号组
     let undo = 2.0 * (40.0 * s);
@@ -477,6 +477,7 @@ fn build(rect: Rect, factor: f32) -> Vec<Item> {
         Tool::Pen,
         Tool::Text,
         Tool::Mosaic,
+        Tool::Crop,
         Tool::ColorPicker,
     ] {
         push(ItemKind::Tool(t), &mut x, y, bw, bh, &mut items);
@@ -567,4 +568,25 @@ fn build(rect: Rect, factor: f32) -> Vec<Item> {
     push(ItemKind::Toggle, &mut x, y, tw, bh, &mut items);
 
     items
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_items_fit_inside_panel() {
+        let mut tb = Toolbar::default();
+        tb.layout(Rect::new(0, 0, 1280, 720));
+        let right = tb.rect.right();
+        for item in &tb.items {
+            assert!(
+                item.rect.right() <= right,
+                "工具栏条目越界: {:?} right={} panel_right={}",
+                item.kind,
+                item.rect.right(),
+                right
+            );
+        }
+    }
 }

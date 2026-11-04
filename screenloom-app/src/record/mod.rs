@@ -32,7 +32,6 @@ use screenloom_core::{Config, Error, Result};
 use stats::SharedStats;
 
 pub use session::{RecordEvent, RecordOutcome, RecordSession, StopReason};
-pub use stats::SharedStats as RecordStats;
 
 /// 默认帧率。
 pub const DEFAULT_FPS: u32 = 30;

@@ -117,17 +117,17 @@ pub(crate) const W_HOTKEY: Widget = Widget {
 pub(crate) const W_HIDE_SELF: Widget = Widget {
     field: Field::HideSelf,
     kind: Kind::Check,
-    text: "截图时隐藏本工具窗口",
+    text: "截图时隐藏本窗口",
 };
 pub(crate) const W_PRIVACY_MODE: Widget = Widget {
     field: Field::PrivacyMode,
     kind: Kind::Check,
-    text: "隐私模式：本工具窗口不出现在别人的截图里",
+    text: "隐私模式",
 };
 pub(crate) const W_TOOLBAR_COLLAPSED: Widget = Widget {
     field: Field::ToolbarCollapsed,
     kind: Kind::Check,
-    text: "工具栏默认折叠",
+    text: "工具栏折叠",
 };
 pub(crate) const W_COPY_FORMAT: Widget = Widget {
     field: Field::CopyFormat,
@@ -192,12 +192,7 @@ pub(crate) const SECTIONS: &[Section] = &[
             },
             Row {
                 label: "",
-                widgets: &[W_HIDE_SELF, W_TOOLBAR_COLLAPSED],
-                trailing: None,
-            },
-            Row {
-                label: "",
-                widgets: &[W_PRIVACY_MODE],
+                widgets: &[W_HIDE_SELF, W_PRIVACY_MODE, W_TOOLBAR_COLLAPSED],
                 trailing: None,
             },
             Row {

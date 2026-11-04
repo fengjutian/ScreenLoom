@@ -31,4 +31,4 @@ pub use image::{sample_color, Rgba, RgbaImage};
 pub use inpaint::{inpaint_region, inpaint_region_with, InpaintOptions};
 pub use nv12::{bgra_to_nv12, bgra_to_nv12_into, nv12_bytes_len, Nv12Image};
 pub use qr::{detect_qr, detect_qrs, QrCode};
-pub use stitch::{match_offset, splice};
+pub use stitch::{append_scroll, match_offset, splice};

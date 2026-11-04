@@ -107,6 +107,42 @@ pub fn splice(prev: &RgbaImage, next: &RgbaImage, dy: i32) -> Option<RgbaImage> 
     Some(out)
 }
 
+/// 把新一屏追加/前插到已经拼接好的长图。
+///
+/// 长图高度已经大于单屏时，**不能**再用 [`splice`]（它假设两帧同高）：
+/// 例如长图 450px、新帧 300px、向下滚动 300px，实际只新增底部 150px。
+///
+/// - `dy < 0`：向下滚动，把 `next` 底部 `|dy|` 行追加到长图末尾；
+/// - `dy > 0`：向上滚动，把 `next` 顶部 `dy` 行插到长图开头。
+pub fn append_scroll(canvas: &RgbaImage, next: &RgbaImage, dy: i32) -> Option<RgbaImage> {
+    let w = canvas.w.min(next.w);
+    if w == 0 || next.h == 0 {
+        return None;
+    }
+    let d = dy.unsigned_abs().min(next.h);
+    if d == 0 {
+        return Some(canvas.clone());
+    }
+    let out_h = canvas.h.checked_add(d)?;
+    let mut out = RgbaImage::new(w, out_h);
+    if dy < 0 {
+        for y in 0..canvas.h {
+            copy_row(canvas, y, &mut out, y);
+        }
+        for y in 0..d {
+            copy_row(next, next.h - d + y, &mut out, canvas.h + y);
+        }
+    } else {
+        for y in 0..d {
+            copy_row(next, y, &mut out, y);
+        }
+        for y in 0..canvas.h {
+            copy_row(canvas, y, &mut out, d + y);
+        }
+    }
+    Some(out)
+}
+
 /// 把源图第 `sy` 行拷到目标图第 `dy` 行（宽度取两者较小值）。
 fn copy_row(src: &RgbaImage, sy: u32, dst: &mut RgbaImage, dy: u32) {
     if sy >= src.h || dy >= dst.h {
@@ -210,5 +246,80 @@ mod tests {
         let next = striped(100);
         let out = splice(&prev, &next, -20).unwrap();
         assert_eq!(out.h, 120);
+    }
+
+    /// 每行有唯一颜色，便于校验拼接后的内容。
+    fn page(h: u32) -> RgbaImage {
+        let mut img = RgbaImage::new(64, h);
+        for y in 0..h {
+            for x in 0..64 {
+                img.set_pixel(
+                    x,
+                    y,
+                    Rgba::rgb((y % 251) as u8, (y / 251) as u8, ((y * 7) % 251) as u8),
+                );
+            }
+        }
+        img
+    }
+
+    fn view(src: &RgbaImage, top: u32, h: u32) -> RgbaImage {
+        let mut out = RgbaImage::new(src.w, h);
+        for y in 0..h {
+            for x in 0..src.w {
+                out.set_pixel(x, y, src.pixel(x, top + y));
+            }
+        }
+        out
+    }
+
+    /// 连续滚动多屏：匹配 + 追加后应还原完整长图，不能错位/重复。
+    #[test]
+    fn three_screen_scroll_stitches_without_drift() {
+        let src = page(1200);
+        let view_h = 300;
+        let step = 150;
+        let mut canvas = view(&src, 0, view_h);
+        let mut prev_view = canvas.clone();
+        let mut top = step;
+        while top + view_h <= src.h {
+            let next = view(&src, top, view_h);
+            let dy = match_offset(&prev_view, &next, 400).expect("连续滚动应能匹配");
+            assert_eq!(
+                dy, -(step as i32),
+                "滚动偏移应稳定（top={top}, dy={dy}）"
+            );
+            canvas = append_scroll(&canvas, &next, dy).expect("追加不应失败");
+            prev_view = next;
+            top += step;
+        }
+
+        assert_eq!(canvas.h, top + view_h - step);
+        for y in 0..canvas.h {
+            for x in 0..canvas.w {
+                assert_eq!(
+                    canvas.pixel(x, y),
+                    src.pixel(x, y),
+                    "拼接后第 {y} 行内容错位"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn append_scroll_up_prepends_new_rows() {
+        let src = page(900);
+        // 先有 source 300..900，再向上滚到 150..450。
+        let canvas = view(&src, 300, 300);
+        let next = view(&src, 150, 300);
+        let out = append_scroll(&canvas, &next, 150).expect("向上滚动应能追加");
+        assert_eq!(out.h, 450);
+        for y in 0..out.h {
+            assert_eq!(
+                out.pixel(0, y),
+                src.pixel(0, y + 150),
+                "第 {y} 行错位"
+            );
+        }
     }
 }

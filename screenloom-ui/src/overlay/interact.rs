@@ -50,6 +50,9 @@ impl OverlayState {
                     Tool::ColorPicker => {
                         self.pick_color(c);
                     }
+                    Tool::Crop => {
+                        self.drag = Some(Drag::Crop { start: p });
+                    }
                     _ => {
                         self.drag = Some(Drag::Draw {
                             tool,
@@ -90,6 +93,8 @@ impl OverlayState {
             Some(Drag::Draw { .. }) => {}
             // 「消除杂物」：拖动过程中不预览，松手时一次性框选（见 `on_mouse_up`）
             Some(Drag::Erase { .. }) => {}
+            // 「裁剪」：拖动过程中不实时改选区，松手时一次性应用（避免标注抖动）
+            Some(Drag::Crop { .. }) => {}
             None => {}
         }
         self.dirty = true;
@@ -172,6 +177,18 @@ impl OverlayState {
                 Drag::Erase { start } => {
                     let r = Rect::new(start.x, start.y, p.x - start.x, p.y - start.y).normalized();
                     self.apply_erase(r);
+                }
+                Drag::Crop { start } => {
+                    let r = Rect::new(start.x, start.y, p.x - start.x, p.y - start.y).normalized();
+                    if let Some(sel) = self.selection {
+                        if let Some(crop) = r.intersect(sel) {
+                            // 太小的框容易误触，保留原选区。
+                            if crop.w >= 8 && crop.h >= 8 {
+                                self.selection = Some(crop);
+                                self.dirty = true;
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }

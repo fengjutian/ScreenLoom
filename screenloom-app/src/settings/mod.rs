@@ -742,6 +742,22 @@ mod tests {
         assert!(l.save.bottom() <= l.client_h, "保存按钮超出客户区");
         assert!(l.cancel.bottom() <= l.client_h, "取消按钮超出客户区");
         assert!(l.client_h > 400 && l.client_h < 1200, "客户区高度不合理");
+        // 横向也不能溢出：三个复选框挤一行时必须都能放下。
+        let right = px(WIN_W, k) - px(PAD, k);
+        for row in &l.rows {
+            for w in &row.widgets {
+                assert!(
+                    w.hit.right() <= right,
+                    "控件 {:?} 超出右边界: {} > {}",
+                    w.field,
+                    w.hit.right(),
+                    right
+                );
+            }
+            if let Some((_, _, r)) = row.trailing {
+                assert!(r.right() <= right, "行尾按钮超出右边界");
+            }
+        }
     }
 
     #[test]
@@ -752,6 +768,17 @@ mod tests {
         // 1.25 倍时高度约等于 1.25 倍（允许取整误差）
         let ratio = b.client_h as f32 / a.client_h as f32;
         assert!((ratio - 1.25).abs() < 0.03, "缩放比例不对: {ratio}");
+    }
+
+    #[test]
+    fn fits_1080p_work_area_at_150_percent() {
+        // 1080p 屏幕扣除任务栏后约 1040 物理像素；设置窗口（含标题栏）必须放得下。
+        let l = compute_layout(1.5);
+        let (_, wh) = frame_adjusted(px(WIN_W, 1.5), l.client_h, 144);
+        assert!(
+            wh <= 1040,
+            "150% DPI 下设置窗口高 {wh}px，超出 1080p 工作区"
+        );
     }
 
     #[test]

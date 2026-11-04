@@ -13,8 +13,6 @@ use crate::gdiplus::{self, Graphics};
 const PAD: i32 = 10;
 /// 色块边长（逻辑像素）。
 const SWATCH: i32 = 28;
-/// 面板宽度（逻辑像素）。
-const W: i32 = 208;
 /// 面板高度（逻辑像素）。
 const H: i32 = PAD * 2 + SWATCH + 18;
 

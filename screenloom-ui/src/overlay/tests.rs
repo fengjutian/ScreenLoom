@@ -398,3 +398,40 @@ fn ai_mosaic_reply_creates_canvas_mosaic_annotations() {
     assert_eq!(regions[0].0, Rect::new(10, 20, 30, 40));
     ov.destroy();
 }
+
+/// 马赛克工具下，线宽 +/- 应改为调节马赛克块大小。
+#[test]
+fn mosaic_tool_width_buttons_change_block_size() {
+    let mut ov = make_overlay(Point::new(0, 0));
+    drag(&ov, 210, 160, 410, 330);
+    key(&ov, 0x0D);
+
+    ov.state.canvas.tool = Tool::Mosaic;
+    ov.state.canvas.mosaic_block = 12;
+    ov.state.on_toolbar(ItemKind::WidthUp);
+    assert_eq!(ov.state.canvas.mosaic_block, 14);
+    ov.state.on_toolbar(ItemKind::WidthDown);
+    assert_eq!(ov.state.canvas.mosaic_block, 12);
+    ov.destroy();
+}
+
+/// 裁剪工具：在编辑态拖一个更小的框，输出选区应缩小到该框。
+#[test]
+fn crop_tool_shrinks_selection() {
+    let mut ov = make_overlay(Point::new(0, 0));
+    drag(&ov, 100, 100, 400, 300);
+    key(&ov, 0x0D); // 进入编辑态
+
+    ov.state.canvas.tool = Tool::Crop;
+    drag(&ov, 150, 150, 300, 250);
+    assert_eq!(ov.state.selection, Some(Rect::new(150, 150, 150, 100)));
+
+    ov.confirm();
+    match ov.state.outcome.take() {
+        Some(OverlayOutcome::Selected { region, .. }) => {
+            assert_eq!(region, Rect::new(150, 150, 150, 100));
+        }
+        other => panic!("expected Selected, got {other:?}"),
+    }
+    ov.destroy();
+}

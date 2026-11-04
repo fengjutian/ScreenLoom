@@ -8,7 +8,7 @@
 //! rqrr 只有解码器没有编码器，所以单元测试里的二维码图样是用 Python `segno`
 //! 生成后以 ASCII art（`'  '` = 白、`'##'` = 黑）内嵌在本文件下方的测试模块里。
 
-use crate::image::{Rgba, RgbaImage};
+use crate::image::RgbaImage;
 
 /// 识别前允许的最大边长（像素）。
 ///
@@ -107,6 +107,7 @@ fn downsample_gray(w: usize, h: usize, gray: &[u8]) -> (usize, usize, Vec<u8>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::image::Rgba;
 
     /// 把 ASCII art 矩阵光栅化成图片：每模块 `scale` 像素，外加 `quiet` 模块的静默边距。
     ///

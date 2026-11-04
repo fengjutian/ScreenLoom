@@ -16,6 +16,7 @@
 //! | `MFCreateSample()` 后取 `ConvertToContiguousBuffer()` | `0x8000FFFF` | 用 `MFCreateMemoryBuffer` + `AddBuffer` |
 //! | buffer 写完不 `SetCurrentLength` | sample 长度为 0，编码器报参数错误 | **必须** `SetCurrentLength(len)` |
 //! | `MFCreateSinkWriterFromURL` 传 `file://` URL | `0x8007007B` | 传**完整文件路径** |
+//! | 设 `MF_SINK_WRITER_DISABLE_THROTTLING=1` | `WriteSample` 只入队不等待 → 提交快于编码消费时 sink 内部队列堆积，**录制第 ~3 秒永久卡死**（文件停止增长，停止/时长上限全部失效） | **不要设**；保持默认节流，`WriteSample` 会等到该样本的 pts 时刻 |
 //! | 末尾固定丢 ~3 帧 | 尾部 ~100 ms 内容缺失 | 收尾补写几帧填充（见 [`VideoEncoder::finish`]） |
 //!
 //! 完整证据见 `doc/录屏方案.md` §4。
@@ -27,8 +28,8 @@ use std::path::Path;
 use windows::core::PCWSTR;
 use windows::Win32::Media::MediaFoundation::{
     IMFAttributes, IMFSample, IMFSinkWriter, MFCreateAttributes, MFCreateMediaType,
-    MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL, MFShutdown, MFStartup,
-    MF_VERSION, MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, MF_SINK_WRITER_DISABLE_THROTTLING,
+    MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL, MFStartup,
+    MF_VERSION, MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS,
     MF_TRANSCODE_CONTAINERTYPE, MF_MT_ALL_SAMPLES_INDEPENDENT, MF_MT_AVG_BITRATE,
     MF_MT_DEFAULT_STRIDE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE, MF_MT_INTERLACE_MODE,
     MF_MT_MAJOR_TYPE, MF_MT_SAMPLE_SIZE, MF_MT_SUBTYPE, MF_MT_TRANSFER_FUNCTION,
@@ -87,35 +88,38 @@ impl VideoEncoder {
 
         // COM 套间 + MF 生命周期：guard 必须活到 sink 写完。
         let _apartment = ComApartment::enter();
+        // MFStartup 是**进程级**的：多个编码器/测试并行时不能各自 Startup/Shutdown，
+        // 否则一个实例的 Shutdown 会把另一个实例的 MFT 一起拆掉（表现为随机 Finalize 失败）。
+        static MF_INIT: std::sync::Once = std::sync::Once::new();
+        MF_INIT.call_once(|| unsafe {
+            let _ = MFStartup(MF_VERSION, 0);
+        });
         let w_url = wide(path.as_os_str());
 
         // 整段 MF 调用都是 unsafe：输入/输出媒体类型与 sink 的初始化必须原子地
         // 成组，任何一步失败都不能留下半初始化的编码器。
         let (sink, stream_index) = unsafe {
-            MFStartup(MF_VERSION, 0).map_err(|e| {
-                Error::Image(format!("MFStartup 失败（系统缺少 Media Foundation）: {e}"))
-            })?;
-        let mut attrs: Option<IMFAttributes> = None;
-        // SAFETY: 输出参数合法。
-        unsafe {
+            let mut attrs: Option<IMFAttributes> = None;
             MFCreateAttributes(&mut attrs, 0).map_err(mf_err)?;
-        }
-        let attrs = attrs.ok_or_else(|| Error::Image("MFCreateAttributes 没返回属性集".into()))?;
+            let attrs =
+                attrs.ok_or_else(|| Error::Image("MFCreateAttributes 没返回属性集".into()))?;
         // 显式声明 MP4 容器（靠扩展名推断会出问题）
         attrs
             .SetGUID(&MF_TRANSCODE_CONTAINERTYPE, &MFTranscodeContainerType_MPEG4)
             .map_err(mf_err)?;
-        // 关闭节流：写入节奏由调用方按墙钟控制（否则帧率会随机器负载漂移）
-        attrs
-            .SetUINT32(&MF_SINK_WRITER_DISABLE_THROTTLING, 1)
-            .map_err(mf_err)?;
+        // **不要**设 `MF_SINK_WRITER_DISABLE_THROTTLING`：
+        // 关掉节流后 `WriteSample` 只是把样本塞进 sink 内部队列就返回，
+        // 提交速度快于编码器消费时队列无限堆积，最终 `WriteSample` 永久阻塞
+        // ——实测表现为录制到第 ~3 秒卡死、文件停止增长、停止/时长上限全部失效。
+        //
+        // 保持默认节流：`WriteSample` 会等到该样本的 pts 时刻才返回，
+        // 主循环因此天然与目标帧率同步，且不会堆积。
         // 允许硬件变换（走 GPU 编码路径）
         attrs
             .SetUINT32(&MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1)
             .map_err(mf_err)?;
 
-        // SAFETY: url 是 NUL 结尾的 UTF-16，attrs 有效。
-        let sink: IMFSinkWriter = unsafe { MFCreateSinkWriterFromURL(PCWSTR(w_url.as_ptr()), None, &attrs) }
+        let sink: IMFSinkWriter = MFCreateSinkWriterFromURL(PCWSTR(w_url.as_ptr()), None, &attrs)
             .map_err(|e| Error::Image(format!("创建 MP4 写入器失败: {e}")))?;
 
         // ---- 输入媒体类型：未压缩 NV12 ----
@@ -295,10 +299,8 @@ impl Drop for VideoEncoder {
             // 正常路径应该已经 finish() 过；这里兜底，避免文件缺 moov。
             let _ = self.finish();
         }
-        // SAFETY: 与 new() 里的 MFStartup 配对。
-        unsafe {
-            let _ = MFShutdown();
-        }
+        // MF 是进程级生命周期，不在这里 MFShutdown：
+        // 提前 Shutdown 会让同进程其它编码器的 Finalize 随机失败。
     }
 }
 
@@ -347,6 +349,14 @@ impl Drop for ComApartment {
 mod tests {
     use super::*;
 
+    /// Media Foundation 的 SinkWriter 在测试进程里不适合并发初始化；
+    /// 编码器相关的测试串行跑，避免 flaky。
+    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+        TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// 造一帧 NV12（中灰 + 中性色度）。
     fn gray_nv12(w: u32, h: u32) -> Vec<u8> {
         vec![128u8; (w * h * 3 / 2) as usize]
@@ -354,6 +364,7 @@ mod tests {
 
     #[test]
     fn writes_a_playable_mp4() {
+        let _g = test_lock();
         let dir = std::env::temp_dir().join("screenloom-encoder-test");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("out.mp4");
@@ -381,6 +392,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_parameters() {
+        let _g = test_lock();
         let dir = std::env::temp_dir().join("screenloom-encoder-test");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("bad.mp4");
@@ -394,6 +406,7 @@ mod tests {
 
     #[test]
     fn rejects_short_frames() {
+        let _g = test_lock();
         let dir = std::env::temp_dir().join("screenloom-encoder-test");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("short.mp4");
