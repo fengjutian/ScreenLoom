@@ -16,6 +16,8 @@ pub enum Error {
     Unsupported(String),
     /// 网络/远端服务失败（HTTP、模型 API 等）
     Network(String),
+    /// 音频设备/采集失败
+    Audio(String),
     Io(std::io::Error),
 }
 
@@ -28,6 +30,7 @@ impl fmt::Display for Error {
             Error::Config(m) => write!(f, "配置失败: {m}"),
             Error::Unsupported(m) => write!(f, "功能不可用: {m}"),
             Error::Network(m) => write!(f, "网络失败: {m}"),
+            Error::Audio(m) => write!(f, "音频失败: {m}"),
             Error::Io(e) => write!(f, "IO 失败: {e}"),
         }
     }

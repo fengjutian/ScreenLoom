@@ -32,6 +32,7 @@ enum Field {
     Dir,
     Monitor,
     Cursor,
+    AudioSystem,
     Hud,
     OpenFolder,
 }
@@ -180,6 +181,7 @@ impl State {
                 .unwrap_or_default(),
         );
         self.set_check(Field::Cursor, self.cfg.record_cursor);
+        self.set_check(Field::AudioSystem, self.cfg.record_audio_system);
         self.set_check(Field::Hud, self.cfg.record_show_hud);
         self.set_check(Field::OpenFolder, self.cfg.record_open_folder);
 
@@ -259,6 +261,7 @@ impl State {
             (sel - 1) as i32
         };
         cfg.record_cursor = self.check(Field::Cursor);
+        cfg.record_audio_system = self.check(Field::AudioSystem);
         cfg.record_show_hud = self.check(Field::Hud);
         cfg.record_open_folder = self.check(Field::OpenFolder);
         Some(cfg)
@@ -274,28 +277,25 @@ fn build_controls(st: &mut State) {
     let mut y = px(22, k);
     let step = px(38, k);
 
-    let mut label = |text: &str, y: i32| unsafe {
-        let h = unsafe {
-            CreateWindowExW(
-                WINDOW_EX_STYLE(0),
-                PCWSTR(wide("STATIC").as_ptr()),
-                PCWSTR(wide(text).as_ptr()),
-                WS_CHILD | WS_VISIBLE,
-                x_label,
-                y + px(5, k),
-                px(140, k),
-                px(20, k),
-                Some(st.hwnd),
-                None,
-                Some(module_handle()),
-                None,
-            )
-        }
+    let label = |text: &str, y: i32| unsafe {
+        let h = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            PCWSTR(wide("STATIC").as_ptr()),
+            PCWSTR(wide(text).as_ptr()),
+            WS_CHILD | WS_VISIBLE,
+            x_label,
+            y + px(5, k),
+            px(140, k),
+            px(20, k),
+            Some(st.hwnd),
+            None,
+            Some(module_handle()),
+            None,
+        )
         .unwrap_or_default();
         let _ = SendMessageW(h, WM_SETFONT, Some(WPARAM(st.font.0 as usize)), Some(LPARAM(0)));
         h
     };
-
     label("录制帧率（1–120）", y);
     let e = make_edit(st.hwnd, x_ctrl, y, w_ctrl, h, st, false);
     st.edits.insert(Field::Fps, e);
@@ -388,6 +388,8 @@ fn build_controls(st: &mut State) {
         st.checks.insert(field, h);
     };
     check(Field::Cursor, "录制鼠标指针", y);
+    y += px(30, k);
+    check(Field::AudioSystem, "录制系统声音（WASAPI loopback）", y);
     y += px(30, k);
     check(Field::Hud, "录制时显示 HUD（计时/暂停/停止）", y);
     y += px(30, k);

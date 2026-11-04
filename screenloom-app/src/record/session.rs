@@ -171,7 +171,7 @@ impl RecordSession {
         let stats2 = Arc::clone(&stats);
         let paths2 = paths.clone();
         let paths_wd = paths.clone();
-        let on_event = Arc::new(on_event);
+        let on_event: Arc<dyn Fn(RecordEvent) + Send + Sync> = Arc::new(on_event);
         let join = std::thread::Builder::new()
             .name("screenloom-record".into())
             .spawn(move || {
@@ -197,29 +197,15 @@ impl RecordSession {
                     });
 
                 // 看门狗：录制线程心跳停滞超过阈值 → 判定 MF 内部阻塞 → 中止并报错。
-                loop {
-                    match done_rx.recv_timeout(WATCHDOG_POLL) {
-                        Ok(()) => break,
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        Err(mpsc::RecvTimeoutError::Timeout) => {
-                            let stalled = stats2.stalled_ms();
-                            if !stats2.is_stalled(stall_timeout_ms()) {
-                                continue;
-                            }
-                            let stage = stats2.stage();
-                            control2.aborted.store(true, Ordering::Release);
-                            control2.request_stop(StopReason::EncoderError);
-                            on_event(RecordEvent::Failed(format!(
-                                "录制在「{}」阶段停滞超过 {} 秒，已中止。\n\
-                                 临时文件已保留（可能无法播放）：{}",
-                                stage.text(),
-                                stalled / 1000,
-                                paths_wd.partial.display()
-                            )));
-                            break;
-                        }
-                    }
-                }
+                run_watchdog(
+                    &stats2,
+                    &control2,
+                    &on_event,
+                    &done_rx,
+                    stall_timeout_ms(),
+                    WATCHDOG_POLL,
+                    &paths_wd,
+                );
             })
             .map_err(|e| Error::Window(format!("启动录制线程失败: {e}")))?;
 
@@ -495,6 +481,48 @@ fn run_worker(
     }));
 }
 
+/// 看门狗：监视录制线程的心跳。
+///
+/// 录制线程每推进一步就刷新 [`SharedStats`] 心跳；这里每 `poll` 检查一次，
+/// 心跳停滞超过 `timeout_ms` 就判定录制线程**永久阻塞**在 Media Foundation 内部
+/// （实测约 9% 的录制会卡在 `WriteSample` / `Flush` / `Finalize` 里出不来），
+/// 于是置 `aborted`、请求停止、发 `Failed` 事件 —— 宁可报错也不能让整个程序挂死。
+///
+/// 返回 `true` 表示录制线程正常结束，`false` 表示检测到卡死并已处置。
+fn run_watchdog(
+    stats: &Arc<SharedStats>,
+    control: &Arc<Control>,
+    on_event: &Arc<dyn Fn(RecordEvent) + Send + Sync>,
+    done_rx: &mpsc::Receiver<()>,
+    timeout_ms: u64,
+    poll: Duration,
+    paths: &RecordPaths,
+) -> bool {
+    loop {
+        match done_rx.recv_timeout(poll) {
+            Ok(()) => return true,
+            Err(mpsc::RecvTimeoutError::Disconnected) => return true,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if !stats.is_stalled(timeout_ms) {
+                    continue;
+                }
+                let stalled = stats.stalled_ms();
+                let stage = stats.stage();
+                control.aborted.store(true, Ordering::Release);
+                control.request_stop(StopReason::EncoderError);
+                on_event(RecordEvent::Failed(format!(
+                    "录制在「{}」阶段停滞超过 {} 秒，已中止。\n\
+                     临时文件已保留（可能无法播放）：{}",
+                    stage.text(),
+                    stalled / 1000,
+                    paths.partial.display()
+                )));
+                return false;
+            }
+        }
+    }
+}
+
 fn countdown(control: &Control, stats: &SharedStats, total: Duration) -> bool {
     if total.is_zero() {
         return !control.is_stopped();
@@ -540,4 +568,84 @@ fn free_bytes(dir: Option<&std::path::Path>) -> Option<u64> {
         .ok()?;
     }
     Some(free)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_paths() -> RecordPaths {
+        RecordPaths::new(PathBuf::from("watchdog-test.mp4")).unwrap()
+    }
+
+    /// 看门狗的核心价值：录制线程卡死时，**程序不能跟着挂死**。
+    #[test]
+    fn watchdog_aborts_when_heartbeat_stalls() {
+        let stats = Arc::new(SharedStats::new());
+        let control = Arc::new(Control::new());
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let (_tx, rx) = mpsc::channel::<()>(); // 发送端留着 → 录制线程"还没结束"
+
+        // 模拟心跳停滞 5 秒。
+        stats.force_stall(5_000);
+        stats.set_stage(Stage::Write);
+
+        let sink = Arc::clone(&seen);
+        let cb: Arc<dyn Fn(RecordEvent) + Send + Sync> = Arc::new(move |ev: RecordEvent| {
+            if let RecordEvent::Failed(msg) = ev {
+                sink.lock().unwrap().push(msg);
+            }
+        });
+        let aborted = run_watchdog(
+            &stats,
+            &control,
+            &cb,
+            &rx,
+            1_000,
+            Duration::from_millis(20),
+            &test_paths(),
+        );
+
+        assert!(!aborted, "心跳停滞必须判定为卡死");
+        assert!(control.aborted.load(Ordering::Acquire), "应置 aborted 标志");
+        assert!(control.is_stopped(), "应请求停止");
+        let msgs = seen.lock().unwrap();
+        assert_eq!(msgs.len(), 1, "应发出一条失败事件");
+        assert!(msgs[0].contains("停滞"), "错误信息应说明停滞: {}", msgs[0]);
+        assert!(msgs[0].contains("写帧"), "错误信息应带出卡住的阶段: {}", msgs[0]);
+    }
+
+    /// 正常结束时看门狗必须安静退出，且不得误发失败事件。
+    #[test]
+    fn watchdog_stays_quiet_when_recording_finishes() {
+        let stats = Arc::new(SharedStats::new());
+        let control = Arc::new(Control::new());
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let (tx, rx) = mpsc::channel::<()>();
+
+        let sink = Arc::clone(&seen);
+        let cb: Arc<dyn Fn(RecordEvent) + Send + Sync> = Arc::new(move |ev: RecordEvent| {
+            if let RecordEvent::Failed(msg) = ev {
+                sink.lock().unwrap().push(msg);
+            }
+        });
+        let h = std::thread::spawn({
+            let ctl = Arc::clone(&control);
+            move || {
+                run_watchdog(
+                    &stats,
+                    &ctl,
+                    &cb,
+                    &rx,
+                    1_000,
+                    Duration::from_millis(20),
+                    &test_paths(),
+                )
+            }
+        });
+        tx.send(()).unwrap();
+        assert!(h.join().unwrap(), "正常结束应返回 true");
+        assert!(seen.lock().unwrap().is_empty(), "不应误报失败");
+        assert!(!control.aborted.load(Ordering::Acquire));
+    }
 }

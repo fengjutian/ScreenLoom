@@ -28,14 +28,15 @@ use std::path::Path;
 use windows::core::PCWSTR;
 use windows::Win32::Media::MediaFoundation::{
     IMFAttributes, IMFSample, IMFSinkWriter, MFCreateAttributes, MFCreateMediaType,
-    MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL, MFStartup,
-    MF_VERSION, MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS,
-    MF_TRANSCODE_CONTAINERTYPE, MF_MT_ALL_SAMPLES_INDEPENDENT, MF_MT_AVG_BITRATE,
-    MF_MT_DEFAULT_STRIDE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE, MF_MT_INTERLACE_MODE,
-    MF_MT_MAJOR_TYPE, MF_MT_SAMPLE_SIZE, MF_MT_SUBTYPE, MF_MT_TRANSFER_FUNCTION,
-    MF_MT_VIDEO_NOMINAL_RANGE, MF_MT_VIDEO_PRIMARIES, MF_MT_YUV_MATRIX,
-    MFTranscodeContainerType_MPEG4, MFVideoFormat_H264, MFVideoFormat_NV12, MFMediaType_Video,
-    MFVideoPrimaries_BT709, MFVideoTransFunc_709,
+    MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL, MFMediaType_Audio,
+    MFMediaType_Video, MFStartup, MFTranscodeContainerType_MPEG4, MFVideoFormat_H264,
+    MFVideoFormat_NV12, MFVideoPrimaries_BT709, MFVideoTransFunc_709, MFAudioFormat_AAC,
+    MFAudioFormat_PCM, MF_MT_ALL_SAMPLES_INDEPENDENT, MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
+    MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS,
+    MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_AVG_BITRATE, MF_MT_DEFAULT_STRIDE, MF_MT_FRAME_RATE,
+    MF_MT_FRAME_SIZE, MF_MT_INTERLACE_MODE, MF_MT_MAJOR_TYPE, MF_MT_SAMPLE_SIZE, MF_MT_SUBTYPE,
+    MF_MT_TRANSFER_FUNCTION, MF_MT_VIDEO_NOMINAL_RANGE, MF_MT_VIDEO_PRIMARIES, MF_MT_YUV_MATRIX,
+    MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, MF_TRANSCODE_CONTAINERTYPE, MF_VERSION,
 };
 use windows::Win32::System::Com::{
     CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED,
@@ -51,10 +52,23 @@ const MF_VIDEO_COLOR_SPACE_BT709: u32 = 1;
 /// `MFVideoNormativeRange_Full`（Y 0~255）。本机编码器**只接受** full range。
 const MF_VIDEO_NORMATIVE_RANGE_FULL: u32 = 2;
 
+/// 是否强制走软件编码器（`SCREENLOOM_NO_HW_ENCODER=1`）。
+///
+/// 硬件编码路径在 `Finalize`（写 moov）时有小概率永久阻塞；这个开关用于
+/// 对照验证是否与硬件编码器有关。
+fn no_hw_encoder() -> bool {
+    matches!(
+        std::env::var("SCREENLOOM_NO_HW_ENCODER").as_deref(),
+        Ok("1") | Ok("true")
+    )
+}
+
 /// H.264 视频编码器。
 pub struct VideoEncoder {
     sink: IMFSinkWriter,
     stream_index: u32,
+    /// AAC 音轨流下标；`None` = 纯视频。
+    audio_stream: Option<u32>,
     w: u32,
     h: u32,
     frame_bytes: usize,
@@ -74,6 +88,20 @@ impl VideoEncoder {
     /// - `fps`：帧率（写入媒体类型；实际写入节奏由调用方按墙钟控制）
     /// - `bitrate`：目标码率（bps）。**必须给**，否则小分辨率下编码器可能一帧都不吐。
     pub fn new(path: &Path, w: u32, h: u32, fps: u32, bitrate: u32) -> Result<VideoEncoder> {
+        Self::new_with_audio(path, w, h, fps, bitrate, false)
+    }
+
+    /// 同 [`VideoEncoder::new`]，可选追加 AAC 音轨。
+    ///
+    /// 音频统一为 48 kHz / 立体声 / 16-bit PCM 输入，MF 负责编码成 AAC。
+    pub fn new_with_audio(
+        path: &Path,
+        w: u32,
+        h: u32,
+        fps: u32,
+        bitrate: u32,
+        audio: bool,
+    ) -> Result<VideoEncoder> {
         if w == 0 || h == 0 || w % 2 != 0 || h % 2 != 0 {
             return Err(Error::Image(format!(
                 "编码尺寸非法（必须为正偶数）: {w}x{h}"
@@ -98,7 +126,7 @@ impl VideoEncoder {
 
         // 整段 MF 调用都是 unsafe：输入/输出媒体类型与 sink 的初始化必须原子地
         // 成组，任何一步失败都不能留下半初始化的编码器。
-        let (sink, stream_index) = unsafe {
+        let (sink, stream_index, audio_stream) = unsafe {
             let mut attrs: Option<IMFAttributes> = None;
             MFCreateAttributes(&mut attrs, 0).map_err(mf_err)?;
             let attrs =
@@ -115,9 +143,14 @@ impl VideoEncoder {
         // 保持默认节流：`WriteSample` 会等到该样本的 pts 时刻才返回，
         // 主循环因此天然与目标帧率同步，且不会堆积。
         // 允许硬件变换（走 GPU 编码路径）
-        attrs
-            .SetUINT32(&MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1)
-            .map_err(mf_err)?;
+        // 实测：硬件编码器路径在 `Finalize`（写 moov）时有小概率永久阻塞
+        // （约 9% 的录制触发，看门狗会中止并保留临时文件）。
+        // `SCREENLOOM_NO_HW_ENCODER=1` 可强制走软件编码器，用于对照排查。
+        if !no_hw_encoder() {
+            attrs
+                .SetUINT32(&MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1)
+                .map_err(mf_err)?;
+        }
 
         let sink: IMFSinkWriter = MFCreateSinkWriterFromURL(PCWSTR(w_url.as_ptr()), None, &attrs)
             .map_err(|e| Error::Image(format!("创建 MP4 写入器失败: {e}")))?;
@@ -186,15 +219,71 @@ impl VideoEncoder {
             .map_err(|e| Error::Image(format!("AddStream(H.264) 失败: {e}")))?;
         sink.SetInputMediaType(stream_index, &in_type, None)
             .map_err(|e| Error::Image(format!("SetInputMediaType(NV12) 失败: {e}")))?;
-            sink.BeginWriting()
-                .map_err(|e| Error::Image(format!("BeginWriting 失败: {e}")))?;
 
-            (sink, stream_index)
+        // ---- 音轨：PCM 输入 → AAC 输出 ----
+        let audio_stream = if audio {
+            let a_out = MFCreateMediaType().map_err(mf_err)?;
+            a_out
+                .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio)
+                .map_err(mf_err)?;
+            a_out
+                .SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_AAC)
+                .map_err(mf_err)?;
+            a_out
+                .SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, 2)
+                .map_err(mf_err)?;
+            a_out
+                .SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, 48_000)
+                .map_err(mf_err)?;
+            a_out
+                .SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, 16)
+                .map_err(mf_err)?;
+            a_out
+                .SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 24_000) // 192 kbps
+                .map_err(mf_err)?;
+            let idx = sink
+                .AddStream(&a_out)
+                .map_err(|e| Error::Image(format!("AddStream(AAC) 失败: {e}")))?;
+
+            let a_in = MFCreateMediaType().map_err(mf_err)?;
+            a_in
+                .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio)
+                .map_err(mf_err)?;
+            a_in
+                .SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_PCM)
+                .map_err(mf_err)?;
+            a_in
+                .SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, 2)
+                .map_err(mf_err)?;
+            a_in
+                .SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, 48_000)
+                .map_err(mf_err)?;
+            a_in
+                .SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, 16)
+                .map_err(mf_err)?;
+            a_in
+                .SetUINT32(&MF_MT_AUDIO_BLOCK_ALIGNMENT, 4)
+                .map_err(mf_err)?;
+            a_in
+                .SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 192_000)
+                .map_err(mf_err)?;
+            sink.SetInputMediaType(idx, &a_in, None)
+                .map_err(|e| Error::Image(format!("SetInputMediaType(PCM) 失败: {e}")))?;
+            Some(idx)
+        } else {
+            None
         };
+
+        sink.BeginWriting()
+            .map_err(|e| Error::Image(format!("BeginWriting 失败: {e}")))?;
+
+        (sink, stream_index, audio_stream)
+    };
 
         Ok(VideoEncoder {
             sink,
             stream_index,
+            audio_stream,
             w,
             h,
             frame_bytes: (w * h * 3 / 2) as usize,
@@ -268,6 +357,56 @@ impl VideoEncoder {
         Ok(())
     }
 
+    /// 写一段 48 kHz / 立体声 / i16 交错 PCM。
+    ///
+    /// `pts_100ns` 是这段音频的起始时间；时长由样本数换算，调用方必须保证
+    /// 音频与视频使用同一条时间轴。
+    pub fn write_audio(&mut self, pcm: &[i16], pts_100ns: i64) -> Result<()> {
+        if self.finished {
+            return Err(Error::Image("编码器已收尾，不能再写音频".into()));
+        }
+        let Some(stream) = self.audio_stream else {
+            return Ok(());
+        };
+        let frames = pcm.len() / 2;
+        if frames == 0 {
+            return Ok(());
+        }
+        let bytes = frames * 4;
+        let duration = frames as i64 * 10_000_000 / 48_000;
+
+        // SAFETY: 同 write_frame；PCM 是未压缩样本。
+        unsafe {
+            let sample: IMFSample = MFCreateSample().map_err(mf_err)?;
+            let buffer = MFCreateMemoryBuffer(bytes as u32).map_err(mf_err)?;
+            let mut ptr: *mut u8 = std::ptr::null_mut();
+            let mut len: u32 = 0;
+            buffer
+                .Lock(&mut ptr, Some(&mut len), None)
+                .map_err(|e| Error::Image(format!("锁定音频缓冲失败: {e}")))?;
+            if (len as usize) < bytes {
+                let _ = buffer.Unlock();
+                return Err(Error::Image("音频缓冲过小".into()));
+            }
+            std::ptr::copy_nonoverlapping(pcm.as_ptr() as *const u8, ptr, bytes);
+            let _ = buffer.Unlock();
+            buffer
+                .SetCurrentLength(bytes as u32)
+                .map_err(mf_err)?;
+            sample.AddBuffer(&buffer).map_err(mf_err)?;
+            sample.SetSampleTime(pts_100ns).map_err(mf_err)?;
+            sample.SetSampleDuration(duration).map_err(mf_err)?;
+            self.sink
+                .WriteSample(stream, &sample)
+                .map_err(|e| Error::Image(format!("写入音频失败: {e}")))?;
+        }
+        Ok(())
+    }
+
+    pub fn has_audio(&self) -> bool {
+        self.audio_stream.is_some()
+    }
+
     /// 收尾：`Flush` → `Finalize`。
     ///
     /// `Finalize` 才会写 `moov` 头 —— **不调用它，产出的 MP4 不可播**。
@@ -293,6 +432,11 @@ impl VideoEncoder {
             self.sink
                 .Flush(self.stream_index)
                 .map_err(|e| Error::Image(format!("Flush 失败: {e}")))?;
+            if let Some(a) = self.audio_stream {
+                self.sink
+                    .Flush(a)
+                    .map_err(|e| Error::Image(format!("Flush(audio) 失败: {e}")))?;
+            }
         }
         Ok(())
     }

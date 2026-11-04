@@ -98,9 +98,13 @@ cargo build --release -p screenloom-app --bins --examples
 | `--long` | 长截图（用户滚动 + 自动匹配拼接）模式 |
 | `--sel x,y,w,h` | **脚本化截图**：直接截指定区域，不需要鼠标。坐标是**虚拟屏物理像素** |
 | `--ocr` | 识别剪贴板里图片的文字（本地 `Windows.Media.Ocr`） |
-| `--record N` | 录屏 N 秒，输出 H.264/MP4（默认 `%USERPROFILE%\Videos\Screenloom`）；**当前仅 CLI** |
+| `--record N` | 录屏 N 秒，输出 H.264/MP4（默认 `%USERPROFILE%\Videos\Screenloom`） |
 | `--record-out PATH` | 指定录制输出文件（必须是 `.mp4`） |
 | `--record-monitor N` | 录制指定显示器下标（默认主显示器） |
+| `--record-fps N` | 录制帧率（1–120） |
+| `--record-bitrate B` | 录制码率（bps） |
+| `--record-countdown N` | 开始前倒计时秒数（0–10） |
+| `--record-settings` | 打开录屏设置窗口（帧率/码率/目录/显示器/指针/HUD） |
 | `--hotkey KEY` | 临时覆盖热键，如 `Ctrl+Shift+A` / `Alt+F9` |
 | `--config PATH` | 指定配置文件 |
 | `--theme PATH` | 主题覆盖 JSON（配色/圆角）；**文件改了自动热重载**，不用重启 |
@@ -128,15 +132,17 @@ cargo build --release -p screenloom-app --bins --examples
 > ⚠️ 本机目前**没有 key**，所以 `--ask` / `--translate` / `--ai-mosaic` 的**真实端到端调用尚未验证**。
 > 已验证的是：请求体构造、响应解析、bbox 解析、以及两家端点都拿到 **HTTP 401**（DNS + TLS + HTTP + 请求头格式全对，只差 key）。
 
-### 录屏（当前为 CLI 最小链路）
+### 录屏
 
 | 项 | 说明 |
 |---|---|
-| 入口 | 仅命令行 `--record N`；**没有**热键、托盘菜单、REC HUD |
-| 目标 | 单显示器、原生分辨率；默认 30 fps / 8 Mbps（当前写死） |
+| 入口 | 全局热键 `Alt+R` / 托盘菜单 / HUD 按钮 / `--record N` |
+| 目标 | 单显示器、原生分辨率；默认 30 fps / 8 Mbps，可配置 |
 | 链路 | WGC 持续抓帧 → BGRA→NV12（BT.709 / full range）→ Media Foundation SinkWriter → H.264 / MP4 |
+| 控制 | 倒计时、HUD 计时、暂停/继续、停止；结束自动打开文件夹 |
+| 设置 | 托盘「录屏设置…」或 `--record-settings`：帧率 / 码率 / 倒计时 / 目录 / 显示器 / 鼠标指针 / HUD |
 | 输出 | `%USERPROFILE%\Videos\Screenloom\<时间戳>.mp4` |
-| 尚不支持 | 音频（系统声/麦克风）、暂停/继续、区域/窗口/整块虚拟屏、录制配置、崩溃恢复 |
+| 尚不支持 | 音频（系统声/麦克风）、区域/窗口/整块虚拟屏、崩溃恢复、时长/大小上限配置 |
 | 完整需求 | `doc/录屏功能需求.md`（REC-01～REC-108，按 P0/P1/P2 分阶段） |
 
 ### 三处入口（都能打开同一个设置窗口）
@@ -328,7 +334,7 @@ cargo run -p screenloom-app --example ocr_probe
 | 新工具栏按钮 | ① `toolbar.rs` 加 `ItemKind` 变体 + `measure()` 宽度 + `build()` 布局 + `paint()` 标签；② `overlay.rs` 加分支（必要时加 `OverlayAction` 变体）；③ `screenloom-app/src/flow.rs` 装 handler / 处理 action。**宽度一定要同步改 `measure()`**，否则工具栏排版错位 |
 | 新 AI 能力 | `screenloom-app/src/ai.rs`（OpenAI 兼容接口，DeepSeek / MiniMax 共用） |
 | 新抓屏后端 | `screenloom-capture/`（WGC 为主，GDI 兜底） |
-| **录屏** | 已落地 CLI 最小链路：`core/src/nv12.rs`（色彩转换）+ `capture/src/stream.rs`（持续帧源）+ `app/src/record/`（MF 编码器 + `--record`）。热键/托盘/HUD/音频/暂停等用户功能见 `doc/录屏功能需求.md` |
+| **录屏** | 已落地热键/托盘/HUD、暂停/继续、倒计时、单显示器 H.264/MP4、录屏设置、鼠标指针（WGC 路径）；音频/区域/窗口/虚拟屏待做，见 `doc/录屏功能需求.md` |
 | 图标 | `screenloom-core/src/icon.rs` → `cargo run -p screenloom-app --example gen_icon` |
 
 新增 Win32 API 后，**在 `doc/实现契约.md` 附录 B.3 记一条坑**（那里 42 条全是真机踩出来的）。
@@ -344,7 +350,7 @@ cargo run -p screenloom-app --example ocr_probe
 | 自动滚动长截图 | 只做「用户滚动 + 自动匹配拼接」，不做微信那种自动滚 |
 | 长截图拼接未做真机滚动实测 | 入口链路（按钮 → 提示窗 → 落盘 + 复制）**已用 E2E 验证**；多屏连续滚动的匹配/追加已有逐像素单测，但**真实滚动页面**仍建议人工复验 |
 | 多屏 DPI | 选区阶段仍按主屏 `scale`；进入编辑后已按**选区所在显示器**切换 UI/标注缩放，物理选区保持不变 |
-| **录屏仅 CLI 最小链路** | 已实现单显示器、固定 30 fps / 8 Mbps 的 H.264/MP4 录制；**没有**热键/托盘/HUD/音频/暂停/区域/窗口入口。用户可用功能与验收见 `doc/录屏功能需求.md` |
+| **录屏缺音频/区域/窗口** | 已支持单显示器、热键/托盘/HUD、暂停、倒计时、帧率/码率/目录/指针配置；**没有**系统声/麦克风、区域/窗口/整块虚拟屏、崩溃恢复 |
 | 标注填充 | 形状填充固定 30% alpha |
 | 工具栏位置 | 固定在虚拟屏底部 |
 | 设置窗口无滚动条 | 内容高度由布局常量决定（客户区 829 物理像素 @1.25，适配 12 个字段）；加字段需重算 `compute_layout` |
