@@ -190,4 +190,14 @@ mod tests {
         assert!(p.starts_with(r"D:\clips"));
         assert!(p.to_string_lossy().ends_with(".mp4"));
     }
+
+    #[test]
+    fn config_limits_become_record_options() {
+        let mut cfg = screenloom_core::Config::default();
+        cfg.record_max_seconds = 30;
+        cfg.record_max_mb = 10;
+        let o = RecordOptions::from_config(&cfg).unwrap();
+        assert_eq!(o.duration, Some(Duration::from_secs(30)));
+        assert_eq!(o.max_bytes, Some(10 * 1024 * 1024));
+    }
 }

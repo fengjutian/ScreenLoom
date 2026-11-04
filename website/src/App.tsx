@@ -117,7 +117,11 @@ function Gallery() {
               <i />
               <span>设置窗口</span>
             </div>
-            <img src="/img/settings.png" alt="screenloom 设置窗口" />
+            <img
+              className="shot-tall"
+              src="/img/settings.png"
+              alt="screenloom 设置窗口"
+            />
             <figcaption className="shot-cap">
               <strong>设置窗口</strong>
               常规、长截图、AI 三组配置，改完即时写盘生效。

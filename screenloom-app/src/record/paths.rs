@@ -163,4 +163,18 @@ mod tests {
         assert!(p.final_path.to_string_lossy().ends_with("clip_2.mp4"));
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn stale_partial_is_preserved_as_recovered() {
+        let dir = std::env::temp_dir().join("screenloom-record-recover-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("clip.partial.mp4");
+        std::fs::write(&p, b"partial").unwrap();
+        let out = recover_partials(&dir);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].to_string_lossy().ends_with("clip.recovered.mp4"));
+        assert!(!p.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

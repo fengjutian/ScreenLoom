@@ -41,6 +41,7 @@ D:\github\screenloom\
 ├─ screenloom-capture/   抓屏：WGC 主路径 + GDI 兜底 + 显示器枚举 + 虚拟屏整屏合成 + 录屏持续帧源
 ├─ screenloom-ui/        渲染交互：GDI+ 管线 / 分层浮窗 / 选区 / 编辑器 / 工具栏 / 贴图窗
 ├─ screenloom-app/       应用层：main / hotkey / tray / settings / theme / clipboard / ai / ocr / save / record（录屏）
+├─ website/              官网：React 19 + TypeScript + Vite，部署到 Netlify
 ├─ scripts/          E2E 与探针脚本（PowerShell）
 └─ probes/           探针与留证：mftprobe/（MF 编码器探针）· evidence/（取证产物）· e2e_out/（截图输出）
 ```
@@ -101,6 +102,9 @@ cargo build --release -p screenloom-app --bins --examples
 | `--record N` | 录屏 N 秒，输出 H.264/MP4（默认 `%USERPROFILE%\Videos\Screenloom`） |
 | `--record-out PATH` | 指定录制输出文件（必须是 `.mp4`） |
 | `--record-monitor N` | 录制指定显示器下标（默认主显示器） |
+| `--record-region x,y,w,h` | 录制屏幕区域（虚拟屏物理像素） |
+| `--record-window TITLE` | 按窗口标题录制单个窗口 |
+| `--record-virtual` | 录制整块虚拟屏（过大时等比缩到 1080p 级） |
 | `--record-fps N` | 录制帧率（1–120） |
 | `--record-bitrate B` | 录制码率（bps） |
 | `--record-countdown N` | 开始前倒计时秒数（0–10） |
@@ -137,12 +141,12 @@ cargo build --release -p screenloom-app --bins --examples
 | 项 | 说明 |
 |---|---|
 | 入口 | 全局热键 `Alt+R` / 托盘菜单 / HUD 按钮 / `--record N` |
-| 目标 | 单显示器、原生分辨率；默认 30 fps / 8 Mbps，可配置 |
-| 链路 | WGC 持续抓帧 → BGRA→NV12（BT.709 / full range）→ Media Foundation SinkWriter → H.264 / MP4 |
-| 控制 | 倒计时、HUD 计时、暂停/继续、停止；结束自动打开文件夹 |
-| 设置 | 托盘「录屏设置…」或 `--record-settings`：帧率 / 码率 / 倒计时 / 目录 / 显示器 / 鼠标指针 / HUD |
+| 目标 | 单显示器 / 窗口 / 屏幕区域 / 整块虚拟屏；默认 30 fps / 8 Mbps，可配置 |
+| 链路 | WGC 持续抓帧（窗口/显示器）→ GDI 兜底（区域/虚拟屏）→ BGRA→NV12（BT.709 / full range）→ Media Foundation SinkWriter → H.264 / MP4 |
+| 控制 | 倒计时、HUD 计时、暂停/继续、停止；托盘菜单随状态变化；结束自动打开文件夹 |
+| 设置 | 托盘「录屏设置…」或 `--record-settings`：帧率 / 码率 / 倒计时 / 时长上限 / 文件大小上限 / 目录 / 显示器 / 鼠标指针 / HUD |
 | 输出 | `%USERPROFILE%\Videos\Screenloom\<时间戳>.mp4` |
-| 尚不支持 | 音频（系统声/麦克风）、区域/窗口/整块虚拟屏、崩溃恢复、时长/大小上限配置 |
+| 尚不支持 | 音频（系统声/麦克风）、真正的崩溃修复（异常中断的 `.partial` 会改名为 `.recovered.mp4`，可能不完整） |
 | 完整需求 | `doc/录屏功能需求.md`（REC-01～REC-108，按 P0/P1/P2 分阶段） |
 
 ### 三处入口（都能打开同一个设置窗口）
@@ -360,7 +364,25 @@ cargo run -p screenloom-app --example ocr_probe
 
 ---
 
-## 10. 相关文档
+## 10. 官网
+
+`website/` 是项目官网，介绍本软件的能力、界面与用法。
+技术栈 React 19 + TypeScript + Vite，纯静态，部署到 Netlify。
+
+```powershell
+cd website
+npm install
+npm run dev        # 本地开发
+npm run build      # 产物在 website/dist
+```
+
+部署到 Netlify：Base directory 设为 `website`，Build command `npm run build`，
+Publish directory `dist`（`website/netlify.toml` 已配好，含 SPA 重写）。
+详见 `website/README.md`。
+
+---
+
+## 11. 相关文档
 
 | 文档 | 内容 |
 |---|---|
