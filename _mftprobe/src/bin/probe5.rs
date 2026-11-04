@@ -10,9 +10,10 @@
 //!
 //! 本探针逐个属性 + 不同取值组合来定位。
 
+use mf_probe::out_path;
 use windows::core::PCWSTR;
 use windows::Win32::Media::MediaFoundation::{
-    IMFAttributes, IMFMediaType, IMFSample, IMFSinkWriter, MFCreateAttributes, MFCreateMediaType,
+    IMFAttributes, IMFSample, IMFSinkWriter, MFCreateAttributes, MFCreateMediaType,
     MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL, MFStartup, MF_VERSION,
     MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, MF_SINK_WRITER_DISABLE_THROTTLING,
     MF_TRANSCODE_CONTAINERTYPE, MF_MT_ALL_SAMPLES_INDEPENDENT, MFTranscodeContainerType_MPEG4,
@@ -70,10 +71,12 @@ fn main() {
 }
 
 unsafe fn run(c: &Color) -> String {
-    let path = format!(
-        r"D:\github\screenloom\_p5_{}.mp4",
+    let path = out_path(&format!(
+        "_p5_{}.mp4",
         c.label.replace([' ', '(', ')'], "_")
-    );
+    ))
+    .display()
+    .to_string();
     let p = std::path::PathBuf::from(&path);
     let _ = std::fs::remove_file(&p);
     let url: Vec<u16> = p

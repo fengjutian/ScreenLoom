@@ -16,6 +16,7 @@
 //!   因子 C：输入格式 —— NV12 / BGRA
 //! 另外加一维：帧数（10 / 30），验证「编码器需要预读若干帧才吐样本」这个猜想。
 
+use mf_probe::out_path;
 use windows::core::PCWSTR;
 use windows::Win32::Media::MediaFoundation::{
     IMFAttributes, IMFMediaType, IMFSample, IMFSinkWriter, MFCreateAttributes, MFCreateMediaType,
@@ -103,7 +104,7 @@ fn main() {
 }
 
 unsafe fn run(c: &Case) -> String {
-    let path = format!(r"D:\github\screenloom\_p4_{}.mp4", c.tag);
+    let path = out_path(&format!("_p4_{}.mp4", c.tag)).display().to_string();
     let p = std::path::PathBuf::from(&path);
     let _ = std::fs::remove_file(&p);
     let url: Vec<u16> = p

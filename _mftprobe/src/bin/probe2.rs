@@ -12,6 +12,7 @@
 //!
 //! 每一步都单独报错误码，这样能精确定位是哪个调用被拒。
 
+use mf_probe::out_path;
 use windows::core::PCWSTR;
 use windows::Win32::Media::MediaFoundation::{
     IMFAttributes, IMFSample, IMFSinkWriter, MFCreateAttributes, MFCreateMediaType,
@@ -120,7 +121,7 @@ impl Attrs {
 }
 
 unsafe fn run(tag: &str, kind: Kind, attrs: Attrs) {
-    let path = format!(r"D:\github\screenloom\_probe_{tag}.mp4");
+    let path = out_path(&format!("_probe_{tag}.mp4")).display().to_string();
     let p = std::path::PathBuf::from(&path);
     let _ = std::fs::remove_file(&p);
     let url: Vec<u16> = p

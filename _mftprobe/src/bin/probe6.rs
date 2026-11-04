@@ -14,6 +14,7 @@
 //!   我把 NOMINAL_RANGE 填成了 0(Unknown)；换成 2(Full) 可能就通了，
 //!   而且只有放输出侧才可能写进 MP4 的 `colr` box。
 
+use mf_probe::out_path;
 use std::time::Instant;
 use windows::core::PCWSTR;
 use windows::Win32::Media::MediaFoundation::{
@@ -69,7 +70,7 @@ fn main() {
 }
 
 unsafe fn run(c: &Case) -> String {
-    let path = format!(r"D:\github\screenloom\_p6_{}.mp4", c.tag);
+    let path = out_path(&format!("_p6_{}.mp4", c.tag)).display().to_string();
     let p = std::path::PathBuf::from(&path);
     let _ = std::fs::remove_file(&p);
     let url: Vec<u16> = p

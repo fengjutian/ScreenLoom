@@ -310,6 +310,7 @@ cargo run -p screenloom-app --example ocr_probe
 | 新工具栏按钮 | ① `toolbar.rs` 加 `ItemKind` 变体 + `measure()` 宽度 + `build()` 布局 + `paint()` 标签；② `overlay.rs` 加分支（必要时加 `OverlayAction` 变体）；③ `screenloom-app/src/flow.rs` 装 handler / 处理 action。**宽度一定要同步改 `measure()`**，否则工具栏排版错位 |
 | 新 AI 能力 | `screenloom-app/src/ai.rs`（OpenAI 兼容接口，DeepSeek / MiniMax 共用） |
 | 新抓屏后端 | `screenloom-capture/`（WGC 为主，GDI 兜底） |
+| **录屏** | 方案已论证（见 `doc/录屏方案.md`）：`core/src/nv12.rs`（色彩转换）+ `capture/src/stream.rs`（持续帧源）+ `app/src/record/`（MF 编码器）+ `ui/src/recorder_hud.rs`（REC 浮窗） |
 | 图标 | `screenloom-core/src/icon.rs` → `cargo run -p screenloom-app --example gen_icon` |
 
 新增 Win32 API 后，**在 `doc/实现契约.md` 附录 B.3 记一条坑**（那里 42 条全是真机踩出来的）。
@@ -325,6 +326,7 @@ cargo run -p screenloom-app --example ocr_probe
 | 自动滚动长截图 | 只做「用户滚动 + 自动匹配拼接」，不做微信那种自动滚 |
 | 长截图拼接未做真机滚动实测 | 入口链路（按钮 → 提示窗 → 落盘 + 复制）**已用 E2E 验证**；但 `match_offset` / `splice` 在**真实滚动页面**上的拼接效果还没实测 |
 | 多屏 DPI | `screenloom-ui` 单一 `scale` 假设全虚拟屏同 DPI |
+| **录屏未实现** | 方案已论证（`doc/录屏方案.md`），**代码尚未落地**，当前无任何录屏入口 |
 | 标注填充 | 形状填充固定 30% alpha |
 | 工具栏位置 | 固定在虚拟屏底部 |
 | 设置窗口无滚动条 | 内容高度由布局常量决定（客户区 829 物理像素 @1.25，适配 12 个字段）；加字段需重算 `compute_layout` |
@@ -339,5 +341,6 @@ cargo run -p screenloom-app --example ocr_probe
 |---|---|
 | `doc/WeChat4-截图工具逆向规格书.md` | 微信 4.x 截图工具的逆向分析（函数、结构、行为） |
 | `doc/实现契约.md` | **实现准绳**：分层约定、类型签名、事件流、AI 契约、设置窗口契约、Win32 坑位、验收清单 |
+| `doc/录屏方案.md` | **录屏**的可行性论证与落地设计（MF 编码链路实测证据 + 8 条踩坑 + 风险 + 分阶段），**实施尚未开始** |
 
 `实现契约.md` §3 的类型签名**即契约，不得擅自更改**；改实现要同步改文档。

@@ -14,6 +14,7 @@
 //! 2. 颜色属性放 **输入** / **两端都放**，哪个能通过？
 //! 3. 不设码率时，320x240 是否仍然成功（验证探针 1 不是巧合）？
 
+use mf_probe::out_path;
 use windows::core::PCWSTR;
 use windows::Win32::Media::MediaFoundation::{
     IMFAttributes, IMFSample, IMFSinkWriter, MFCreateAttributes, MFCreateMediaType,
@@ -99,7 +100,7 @@ fn report_step<T>(tag: &str, name: &str, r: windows::core::Result<T>) -> Option<
 }
 
 unsafe fn run(c: &Case) {
-    let path = format!(r"D:\github\screenloom\_p3_{}.mp4", c.tag);
+    let path = out_path(&format!("_p3_{}.mp4", c.tag)).display().to_string();
     let p = std::path::PathBuf::from(&path);
     let _ = std::fs::remove_file(&p);
     let url: Vec<u16> = p

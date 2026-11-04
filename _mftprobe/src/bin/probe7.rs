@@ -5,6 +5,7 @@
 //!
 //! 用法：probe7 <0|1>   0 = 关节流（DISABLE_THROTTLING=1），1 = 开节流（默认）
 
+use mf_probe::out_path;
 use std::time::Instant;
 use windows::core::PCWSTR;
 use windows::Win32::Media::MediaFoundation::{
@@ -37,9 +38,7 @@ fn main() {
             return;
         }
 
-        let dir = std::env::temp_dir().join("screenloom_probe");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join(format!(
+        let path = out_path(&format!(
             "{}_{}f_{}.mp4",
             if throttle_on { "on" } else { "off" },
             n_frames,

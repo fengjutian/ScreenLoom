@@ -11,8 +11,7 @@
 _mftprobe/target/
 
 # 探针产物（可由 _mftprobe 重新生成，不入库）
-/_p*.mp4
-/_p*.txt
+_mftprobe/out/
 
 # 一次性打补丁脚本（改完即弃）
 _patch*.py
