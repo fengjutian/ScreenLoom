@@ -64,6 +64,7 @@ fn make_overlay(origin: Point) -> Overlay {
         virtual_origin: origin,
         scale: 1.0,
         hide_from_capture: false,
+        auto_scale: false,
     })
     .expect("Overlay::new 失败");
     ov.show(&test_bg(800, 600)).expect("show 失败");
@@ -91,6 +92,7 @@ fn mouse_coords_map_to_image_pixels_and_crop_correctly() {
         virtual_origin: origin,
         scale: 1.0,
         hide_from_capture: false,
+        auto_scale: false,
     })
     .unwrap();
     ov.show(&bg).expect("show 失败");
@@ -204,6 +206,7 @@ fn canvas_annotations_are_physical_pixels_under_scaled_dpi() {
         virtual_origin: Point::new(-1038, -1440),
         scale: 1.25,
         hide_from_capture: false,
+        auto_scale: false,
     })
     .unwrap();
     ov.show(&test_bg(2000, 1600)).expect("show 失败");

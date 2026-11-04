@@ -4,6 +4,51 @@
 
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
+/// 录制内部阶段。
+///
+/// 用途有两个：
+/// 1. **诊断**：MF 内部偶发阻塞时，靠它定位卡在哪一步（取帧 / 写帧 / Flush / Finalize）。
+/// 2. **看门狗**：配合 [`SharedStats::stalled_ms`] 判断录制线程是否还活着。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Stage {
+    Idle = 0,
+    /// 取帧 / BGRA→NV12 转换。
+    Capture = 1,
+    /// `IMFSinkWriter::WriteSample`。
+    Write = 2,
+    /// 收尾补帧。
+    Tail = 3,
+    /// `IMFSinkWriter::Flush`。
+    Flush = 4,
+    /// `IMFSinkWriter::Finalize`（写 moov）。
+    Finalize = 5,
+}
+
+impl Stage {
+    pub fn from_u8(v: u8) -> Stage {
+        match v {
+            1 => Stage::Capture,
+            2 => Stage::Write,
+            3 => Stage::Tail,
+            4 => Stage::Flush,
+            5 => Stage::Finalize,
+            _ => Stage::Idle,
+        }
+    }
+
+    pub fn text(self) -> &'static str {
+        match self {
+            Stage::Idle => "空闲",
+            Stage::Capture => "取帧",
+            Stage::Write => "写帧",
+            Stage::Tail => "收尾补帧",
+            Stage::Flush => "刷新编码器",
+            Stage::Finalize => "写文件尾",
+        }
+    }
+}
+
 /// 录制阶段。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -16,7 +61,6 @@ pub enum Phase {
     Finished = 5,
     Failed = 6,
 }
-
 impl Phase {
     pub fn from_u8(v: u8) -> Phase {
         match v {
@@ -43,6 +87,10 @@ pub struct SharedStats {
     frames: AtomicU64,
     dropped: AtomicU64,
     bytes: AtomicU64,
+    /// 当前内部阶段。
+    stage: AtomicU8,
+    /// 最近一次活动的墙钟时刻（毫秒）。
+    heartbeat: AtomicU64,
 }
 
 impl Default for SharedStats {
@@ -53,6 +101,8 @@ impl Default for SharedStats {
             frames: AtomicU64::new(0),
             dropped: AtomicU64::new(0),
             bytes: AtomicU64::new(0),
+            stage: AtomicU8::new(Stage::Idle as u8),
+            heartbeat: AtomicU64::new(0),
         }
     }
 }
@@ -112,4 +162,36 @@ impl SharedStats {
             total % 60
         )
     }
+
+    /// 当前内部阶段。
+    pub fn stage(&self) -> Stage {
+        Stage::from_u8(self.stage.load(Ordering::Relaxed))
+    }
+
+    pub fn set_stage(&self, stage: Stage) {
+        self.stage.store(stage as u8, Ordering::Relaxed);
+    }
+
+    /// 刷新心跳：录制线程每完成一个可推进的步骤就调一次。
+    pub fn touch(&self) {
+        self.heartbeat
+            .store(now_ms(), Ordering::Relaxed);
+    }
+
+    /// 心跳停滞了多久（毫秒）。从未活动过则返回 0。
+    pub fn stalled_ms(&self) -> u64 {
+        let hb = self.heartbeat.load(Ordering::Relaxed);
+        if hb == 0 {
+            return 0;
+        }
+        now_ms().saturating_sub(hb)
+    }
+}
+
+/// 毫秒级墙钟。
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }

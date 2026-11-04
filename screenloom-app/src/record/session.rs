@@ -296,6 +296,7 @@ fn run_worker(
         }
 
         // 取最新帧；没有新画面就沿用上一帧。
+        eprintln!("[D] {} take enter", ts_ms());
         match stream.take_latest() {
             Ok(Some(frame)) => {
                 if let Err(e) = bgra_to_nv12_into(&frame.data, frame.w, frame.h, &mut nv12) {
@@ -312,6 +313,7 @@ fn run_worker(
                 break;
             }
         }
+        eprintln!("[D] {} take done", ts_ms());
 
         if have_frame {
             if let Some(pts) = pacer.tick(now) {
@@ -457,4 +459,12 @@ fn free_bytes(dir: Option<&std::path::Path>) -> Option<u64> {
         .ok()?;
     }
     Some(free)
+}
+
+/// 毫秒级墙钟时间戳（诊断用）。
+fn ts_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
 }

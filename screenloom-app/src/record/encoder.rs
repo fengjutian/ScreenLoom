@@ -260,9 +260,17 @@ impl VideoEncoder {
                 .SetSampleDuration(self.duration_100ns)
                 .map_err(mf_err)?;
 
+            let __t = std::time::Instant::now();
+            eprintln!("[D] {} write#{} enter", ts_ms(), self.written);
             self.sink
                 .WriteSample(self.stream_index, &sample)
                 .map_err(|e| Error::Image(format!("写入第 {} 帧失败: {e}", self.written)))?;
+            eprintln!(
+                "[D] {} write#{} done {:.1}ms",
+                ts_ms(),
+                self.written,
+                __t.elapsed().as_secs_f64() * 1000.0
+            );
         }
         self.written += 1;
         Ok(())
@@ -282,15 +290,27 @@ impl VideoEncoder {
 
         // SAFETY: 同 write_frame。
         unsafe {
+            eprintln!("[D] {} flush enter", ts_ms());
             self.sink
                 .Flush(self.stream_index)
                 .map_err(|e| Error::Image(format!("Flush 失败: {e}")))?;
+            eprintln!("[D] {} flush done", ts_ms());
+            eprintln!("[D] {} finalize enter", ts_ms());
             self.sink
                 .Finalize()
                 .map_err(|e| Error::Image(format!("Finalize 失败: {e}")))?;
+            eprintln!("[D] {} finalize done", ts_ms());
         }
         Ok(())
     }
+}
+
+/// 毫秒级墙钟时间戳（诊断用）。
+fn ts_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
 }
 
 impl Drop for VideoEncoder {

@@ -37,6 +37,35 @@ impl OverlayState {
         Point::new(r.x, r.y)
     }
 
+    /// 选区确定后，把 UI/标注的缩放切到选区所在显示器。
+    ///
+    /// 选区本身以图像物理像素为准；这里只重算逻辑表示，物理区域不变。
+    /// 这样在 1.25 主屏 + 1.0 副屏的混合 DPI 环境里，副屏上的工具栏和字号
+    /// 不会按主屏比例被放大。
+    pub(crate) fn adapt_scale_to_selection(&mut self) {
+        if !self.cfg.auto_scale {
+            return;
+        }
+        let Some(sel) = self.selection else {
+            return;
+        };
+        let phys = self.l2i(sel);
+        let c = phys.center();
+        let screen = Point::new(
+            c.x + self.cfg.virtual_origin.x,
+            c.y + self.cfg.virtual_origin.y,
+        );
+        let Some(scale) = monitor_scale_at(screen) else {
+            return;
+        };
+        if (scale - self.cfg.scale).abs() < 0.01 {
+            return;
+        }
+        self.cfg.scale = scale;
+        // 物理选区不变，只把逻辑表示换算到新 scale。
+        self.selection = Some(self.i2l(phys));
+    }
+
     /// 逻辑坐标下的虚拟屏幕矩形。
     pub(crate) fn logical_screen(&self) -> Rect {
         let (w, h) = self.surface;
@@ -179,4 +208,24 @@ pub(crate) fn contrast_color(c: Rgba) -> Rgba {
     } else {
         Rgba::WHITE
     }
+}
+
+/// 屏幕物理坐标所在显示器的有效 DPI 缩放。
+fn monitor_scale_at(p: Point) -> Option<f32> {
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+
+    let mon = unsafe { MonitorFromPoint(POINT { x: p.x, y: p.y }, MONITOR_DEFAULTTONEAREST) };
+    let mut mi = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    if !unsafe { GetMonitorInfoW(mon, &mut mi) }.as_bool() {
+        return None;
+    }
+    let (mut dx, mut dy) = (96u32, 96u32);
+    unsafe { GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &mut dx, &mut dy) }.ok()?;
+    Some(dx as f32 / 96.0)
 }

@@ -147,6 +147,10 @@ pub struct OverlayConfig {
     pub scale: f32,
     /// 浮窗是否对截屏程序隐藏（`WDA_EXCLUDEFROMCAPTURE`）。
     pub hide_from_capture: bool,
+    /// 选区确定后是否按选区所在显示器自动切换 UI 缩放。
+    ///
+    /// 自动化测试用固定 scale，需设为 false；真实抓屏流程为 true。
+    pub auto_scale: bool,
 }
 
 /// 用户在工具栏上点击的最终动作。

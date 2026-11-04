@@ -147,6 +147,7 @@ pub fn run_capture(
         virtual_origin: virtual_screen_origin(),
         scale: primary.scale,
         hide_from_capture: cfg.hide_self,
+        auto_scale: true,
     })?;
     overlay.show(&frame.image)?;
 

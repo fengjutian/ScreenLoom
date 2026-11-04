@@ -87,6 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         virtual_origin: Point::new(0, 0),
         scale: 1.0,
         hide_from_capture: false,
+        auto_scale: false,
     })?;
     ov.show(&base)?;
     // 选一个区域，让边框 + 尺寸提示可见
@@ -130,6 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         virtual_origin: Point::new(0, 0),
         scale: 3.0,
         hide_from_capture: false,
+        auto_scale: false,
     })?;
     ov3.show(&big_bg)?;
     ov3.set_selection(Rect::new(1200, 400, 2400, 700));

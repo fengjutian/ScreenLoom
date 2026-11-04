@@ -90,6 +90,8 @@ impl OverlayState {
         if self.selection.is_none() {
             return;
         }
+        // 混合 DPI：编辑/标注按选区所在显示器的缩放走，物理选区不变。
+        self.adapt_scale_to_selection();
         self.mode = Mode::Edit;
         self.relayout_toolbar();
         self.dirty = true;
