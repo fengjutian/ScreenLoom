@@ -20,12 +20,12 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use screenloom_capture::{CaptureTarget, ScreenStream};
 use screenloom_core::{bgra_to_nv12_into, nv12_bytes_len, Error, Result};
 
 use super::encoder::VideoEncoder;
 use super::pacer::FramePacer;
 use super::paths::RecordPaths;
+use super::source::FrameSource;
 use super::stats::{Phase, SharedStats};
 use super::RecordOptions;
 
@@ -227,12 +227,9 @@ fn run_worker(
     on_event: Arc<dyn Fn(RecordEvent) + Send + Sync>,
 ) {
     // ---- 初始化：磁盘 → 帧源 → 编码器 ----
-    let init = (|| -> Result<(ScreenStream, VideoEncoder)> {
+    let init = (|| -> Result<(FrameSource, VideoEncoder)> {
         check_free_space(paths.partial.parent())?;
-        let target = match opts.target {
-            super::RecordTarget::Monitor(i) => CaptureTarget::Monitor(i),
-        };
-        let stream = ScreenStream::start(target)?;
+        let stream = FrameSource::open(opts.target, opts.fps)?;
         let (w, h) = stream.size();
         let enc = VideoEncoder::new(&paths.partial, w, h, opts.fps, opts.bitrate)?;
         Ok((stream, enc))

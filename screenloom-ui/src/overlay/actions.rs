@@ -8,8 +8,20 @@ impl OverlayState {
             ItemKind::Tool(t) => self.canvas.tool = t,
             ItemKind::Color(c) => self.canvas.color = c,
             ItemKind::WidthInfo | ItemKind::FontInfo => {}
-            ItemKind::WidthDown => self.canvas.width = (self.canvas.width - 1.0).max(1.0),
-            ItemKind::WidthUp => self.canvas.width = (self.canvas.width + 1.0).min(40.0),
+            ItemKind::WidthDown => {
+                if self.canvas.tool == Tool::Mosaic {
+                    self.canvas.mosaic_block = self.canvas.mosaic_block.saturating_sub(2).max(2);
+                } else {
+                    self.canvas.width = (self.canvas.width - 1.0).max(1.0);
+                }
+            }
+            ItemKind::WidthUp => {
+                if self.canvas.tool == Tool::Mosaic {
+                    self.canvas.mosaic_block = (self.canvas.mosaic_block + 2).min(64);
+                } else {
+                    self.canvas.width = (self.canvas.width + 1.0).min(40.0);
+                }
+            }
             ItemKind::FontDown => self.canvas.font_size = (self.canvas.font_size - 2.0).max(8.0),
             ItemKind::FontUp => self.canvas.font_size = (self.canvas.font_size + 2.0).min(200.0),
             ItemKind::Undo => self.canvas.undo(),

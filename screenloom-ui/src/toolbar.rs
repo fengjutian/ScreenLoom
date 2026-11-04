@@ -235,6 +235,9 @@ impl Toolbar {
     fn paint_info(&self, g: &mut Graphics, kind: ItemKind, r: Rect, canvas: &Canvas) {
         let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let (label, value) = match kind {
+            ItemKind::WidthInfo if canvas.tool == Tool::Mosaic => {
+                ("块", format!("{}", canvas.mosaic_block))
+            }
             ItemKind::WidthInfo => ("宽", format!("{}", canvas.width.round() as i32)),
             _ => ("号", format!("{}", canvas.font_size.round() as i32)),
         };

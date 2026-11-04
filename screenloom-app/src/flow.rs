@@ -11,7 +11,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use screenloom_capture::{
     capture_virtual_screen, default_backend, list_monitors, virtual_screen_origin,
 };
-use screenloom_core::{Config, Error, Rect, Result};
+use screenloom_core::{Config, Error, Result};
 use screenloom_ui::{
     render_annotations, AiReply, Overlay, OverlayAction, OverlayConfig, OverlayOutcome, PinWindow,
 };

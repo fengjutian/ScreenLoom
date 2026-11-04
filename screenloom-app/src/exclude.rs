@@ -7,7 +7,7 @@
 //! 这套逻辑同时服务截图与录屏：录屏侧对每一帧调用 [`apply_excluded_windows`]。
 
 use screenloom_capture::{list_capture_windows, WindowInfo};
-use screenloom_core::{exclude_entry, parse_exclude_entry, Config, Error, Rect, Result, Rgba, RgbaImage};
+use screenloom_core::{exclude_entry, parse_exclude_entry, Config, Rect, Result, Rgba, RgbaImage};
 
 use crate::windowpicker::{self, PickerMode};
 

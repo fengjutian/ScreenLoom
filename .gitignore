@@ -12,6 +12,9 @@
 /probes/mftprobe/target/
 /probes/mftprobe/out/
 
+# 根目录误落的录屏产物（正式输出在 %USERPROFILE%\Videos\Screenloom）
+/*.mp4
+
 # 一次性打补丁脚本（改完即弃）
 _patch*.py
 

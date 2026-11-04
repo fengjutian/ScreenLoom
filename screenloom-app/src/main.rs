@@ -61,6 +61,12 @@ struct Args {
     record_out: Option<std::path::PathBuf>,
     /// `--record-monitor N`：录制目标显示器下标
     record_monitor: Option<usize>,
+    /// `--record-fps N`：录制帧率
+    record_fps: Option<u32>,
+    /// `--record-bitrate BPS`：录制码率
+    record_bitrate: Option<u32>,
+    /// `--record-countdown SECS`：开始前倒计时
+    record_countdown: Option<u32>,
     /// `--settings`：打开设置窗口
     open_settings: bool,
     provider: Option<ai::Provider>,
@@ -189,6 +195,36 @@ fn main() {
                     Err(_) => die(&format!("--record-monitor 需要一个非负整数，收到: {s}")),
                 }
             }
+            "--record-fps" => {
+                i += 1;
+                let Some(s) = argv.get(i) else {
+                    die("--record-fps 需要一个帧率，例如 30");
+                };
+                match s.trim().parse::<u32>() {
+                    Ok(v) if (1..=120).contains(&v) => args.record_fps = Some(v),
+                    _ => die(&format!("--record-fps 需要 1–120 的整数，收到: {s}")),
+                }
+            }
+            "--record-bitrate" => {
+                i += 1;
+                let Some(s) = argv.get(i) else {
+                    die("--record-bitrate 需要一个码率（bps），例如 8000000");
+                };
+                match s.trim().parse::<u32>() {
+                    Ok(v) if v >= 100_000 => args.record_bitrate = Some(v),
+                    _ => die(&format!("--record-bitrate 需要 ≥100000 的整数，收到: {s}")),
+                }
+            }
+            "--record-countdown" => {
+                i += 1;
+                let Some(s) = argv.get(i) else {
+                    die("--record-countdown 需要秒数，例如 3");
+                };
+                match s.trim().parse::<u32>() {
+                    Ok(v) if v <= 10 => args.record_countdown = Some(v),
+                    _ => die(&format!("--record-countdown 需要 0–10 的整数，收到: {s}")),
+                }
+            }
             "--settings" => args.open_settings = true,
             "--provider" => {
                 i += 1;
@@ -312,8 +348,17 @@ fn main() {
             std::process::exit(1);
         }
         opts.duration = Some(std::time::Duration::from_secs(secs));
-        // CLI 是脚本化入口，默认不等倒计时；配置里显式设了才等。
-        opts.countdown = std::time::Duration::from_secs(cfg.record_countdown.min(10) as u64);
+        if let Some(fps) = args.record_fps {
+            opts.fps = fps;
+        }
+        if let Some(bps) = args.record_bitrate {
+            opts.bitrate = bps;
+        }
+        // CLI 是脚本化入口，默认不等倒计时；显式传了才等。
+        opts.countdown = std::time::Duration::from_secs(
+            args.record_countdown
+                .unwrap_or(cfg.record_countdown.min(10)) as u64,
+        );
         eprintln!(
             "开始录制 {:.0} 秒 → {}（{} fps / {} bps）",
             secs as f64,
@@ -455,6 +500,9 @@ fn print_help() {
          screenloom --record N     录屏 N 秒，输出 H.264/MP4（默认 %USERPROFILE%\\Videos\\Screenloom）\n  \
          screenloom --record-out P 指定录制输出文件（.mp4）\n  \
          screenloom --record-monitor N 录制指定显示器下标（默认主显示器）\n  \
+         screenloom --record-fps N     录制帧率（1–120，默认 30）\n  \
+         screenloom --record-bitrate B 录制码率（bps，默认 8000000）\n  \
+         screenloom --record-countdown N 开始前倒计时秒数（0–10）\n  \
          screenloom --hotkey KEY   指定热键，如 Ctrl+Shift+A / Alt+F9\n  \
          screenloom --config PATH  指定配置文件\n  \
          screenloom --theme PATH   主题覆盖 JSON（配色/圆角，文件改了自动热重载）\n  \

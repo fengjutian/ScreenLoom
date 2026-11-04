@@ -297,7 +297,7 @@ impl Drop for VideoEncoder {
         }
         // SAFETY: 与 new() 里的 MFStartup 配对。
         unsafe {
-            MFShutdown();
+            let _ = MFShutdown();
         }
     }
 }

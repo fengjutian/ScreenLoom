@@ -94,7 +94,7 @@ pub fn inpaint_region_with(img: &RgbaImage, region: Rect, opts: &InpaintOptions)
 
     // ---- 只把最细层的洞内容写回 ----
     if let Some(final_level) = prev {
-        write_back(&mut out, &final_level, x0 as usize, y0 as usize);
+        write_back(&mut out, &final_level);
     }
     out
 }
@@ -469,7 +469,7 @@ fn fill_level(lvl: &mut Level, ps: usize, iterations: u32, rng: &mut Rng) {
                 let mut top = [Cand { ssd: u64::MAX, base: 0 }; 3];
                 let mut topn = 0usize;
 
-                let mut consider = |base: usize, top: &mut [Cand; 3], topn: &mut usize| {
+                let consider = |base: usize, top: &mut [Cand; 3], topn: &mut usize| {
                     if !valid[base] {
                         return;
                     }
@@ -549,8 +549,11 @@ fn fill_level(lvl: &mut Level, ps: usize, iterations: u32, rng: &mut Rng) {
     }
 }
 
-/// 把最细层的洞内容写回输出图（只写 region 之内）。
-fn write_back(out: &mut RgbaImage, lvl: &Level, x0: usize, y0: usize) {
+/// 把最细层的洞内容写回输出图。
+///
+/// 最细层的坐标就是**整图坐标**（`Level::from_image` 按整图尺寸建），
+/// 这里不能再加 `region.x/y`，否则会整体偏移一个选区原点。
+fn write_back(out: &mut RgbaImage, lvl: &Level) {
     for y in 0..lvl.h {
         for x in 0..lvl.w {
             let idx = y * lvl.w + x;
@@ -559,8 +562,8 @@ fn write_back(out: &mut RgbaImage, lvl: &Level, x0: usize, y0: usize) {
             }
             let p = idx * 4;
             out.set_pixel(
-                (x0 + x) as u32,
-                (y0 + y) as u32,
+                x as u32,
+                y as u32,
                 Rgba {
                     r: lvl.img[p],
                     g: lvl.img[p + 1],

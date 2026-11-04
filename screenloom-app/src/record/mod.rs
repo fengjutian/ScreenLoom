@@ -20,6 +20,7 @@ pub mod hud;
 pub mod pacer;
 pub mod paths;
 pub mod session;
+pub mod source;
 pub mod stats;
 
 use std::path::{Path, PathBuf};
@@ -31,7 +32,7 @@ use screenloom_core::{Config, Error, Result};
 use stats::SharedStats;
 
 pub use session::{RecordEvent, RecordOutcome, RecordSession, StopReason};
-pub use stats::{Phase, SharedStats as RecordStats};
+pub use stats::SharedStats as RecordStats;
 
 /// 默认帧率。
 pub const DEFAULT_FPS: u32 = 30;

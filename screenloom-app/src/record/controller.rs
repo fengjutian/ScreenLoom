@@ -161,7 +161,14 @@ impl Controller {
             }
         })?;
         if self.cfg.record_show_hud {
-            self.hud = Some(RecorderHud::show(Arc::clone(&stats), self.hwnd)?);
+            match RecorderHud::show(Arc::clone(&stats), self.hwnd) {
+                Ok(hud) => self.hud = Some(hud),
+                Err(e) => {
+                    session.stop(StopReason::EncoderError);
+                    let _ = session.join();
+                    return Err(e);
+                }
+            }
         }
         self.stats = Some(stats);
         self.session = Some(session);
@@ -229,6 +236,16 @@ impl Controller {
         }
         self.stats = None;
         let _ = reason;
+    }
+}
+
+impl Drop for Controller {
+    fn drop(&mut self) {
+        if let Some(s) = self.session.take() {
+            s.stop(StopReason::AppExit);
+            let _ = s.join();
+        }
+        self.hud.take();
     }
 }
 
