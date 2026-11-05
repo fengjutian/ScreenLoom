@@ -92,6 +92,25 @@ struct Args {
 }
 
 fn main() {
+    // ---- 编码子进程身份 ----
+    //
+    // 父进程用**同一个可执行文件**拉起自己当编码子进程（见
+    // `record::encoder_client`）。这样任何分发形态下都不需要额外带一个
+    // `screenloom-encoder-host.exe`，也就不会出现"漏带 → 退化成进程内编码
+    // → MF 卡死 → 用户拿不到文件"。
+    //
+    // 必须放在所有初始化之前：子进程只需要 stdin/stdout + MF，
+    // 不能碰配置迁移、单实例、托盘、热键。
+    if std::env::args().any(|a| a == "--encoder-host") {
+        match screenloom_encoder_host::run_host() {
+            Ok(()) => return,
+            Err(e) => {
+                eprintln!("encoder-host: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     let mut args = Args {
         ai_block: 12,
         ..Args::default()

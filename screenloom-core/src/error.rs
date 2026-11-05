@@ -10,6 +10,8 @@ pub enum Error {
     Window(String),
     /// 图像编解码失败
     Image(String),
+    /// 录屏编码器失败（Media Foundation / 编码子进程）
+    Encoder(String),
     /// 配置读写失败
     Config(String),
     /// 功能不可用（如未实现的 AI 能力）
@@ -27,6 +29,7 @@ impl fmt::Display for Error {
             Error::Capture(m) => write!(f, "捕获失败: {m}"),
             Error::Window(m) => write!(f, "窗口失败: {m}"),
             Error::Image(m) => write!(f, "图像失败: {m}"),
+            Error::Encoder(m) => write!(f, "编码失败: {m}"),
             Error::Config(m) => write!(f, "配置失败: {m}"),
             Error::Unsupported(m) => write!(f, "功能不可用: {m}"),
             Error::Network(m) => write!(f, "网络失败: {m}"),

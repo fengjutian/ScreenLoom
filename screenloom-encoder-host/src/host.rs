@@ -57,7 +57,7 @@ pub fn run() -> Result<(), String> {
                 pts,
                 size,
             } => {
-                hang_if("write");
+                hang_if("write", seq);
                 let data = map.slot(slot, size as usize)?;
                 let t0 = Instant::now();
                 if let Err(e) = enc.write(data, pts) {
@@ -90,7 +90,7 @@ pub fn run() -> Result<(), String> {
                     return Ok(());
                 }
                 stage = Stage::Finalize;
-                hang_if("finalize");
+                hang_if("finalize", 0);
                 if let Err(e) = enc.finalize() {
                     let _ = send(&Message::Error {
                         code: "finalize".into(),
@@ -121,11 +121,21 @@ fn send(m: &Message) -> Result<(), String> {
 }
 
 /// 测试用：`SCREENLOOM_HOST_HANG=write|finalize` 模拟卡死。
-fn hang_if(where_: &str) {
+///
+/// `SCREENLOOM_HOST_HANG_AFTER=N` 让它先写 N 帧再卡死 —— 真实故障通常是
+/// "录到一半才卡"，那种情况下文件里已经有内容，才是真正要测的救回场景。
+fn hang_if(where_: &str, seq: u64) {
     if std::env::var("SCREENLOOM_HOST_HANG").ok().as_deref() != Some(where_) {
         return;
     }
-    eprintln!("encoder-host: 模拟卡死在 {where_}");
+    let after = std::env::var("SCREENLOOM_HOST_HANG_AFTER")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    if seq < after {
+        return;
+    }
+    eprintln!("encoder-host: 模拟卡死在 {where_}（第 {seq} 帧）");
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));
     }

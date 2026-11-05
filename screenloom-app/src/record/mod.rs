@@ -17,6 +17,7 @@
 pub mod audio;
 pub mod controller;
 pub mod encoder;
+pub mod encoder_client;
 pub mod hud;
 pub mod mux;
 pub mod pacer;
@@ -157,10 +158,14 @@ pub fn record(opts: &RecordOptions) -> Result<RecordOutcome> {
 
     match event {
         RecordEvent::Finished(out) => Ok(out),
-        RecordEvent::Discarded(reason) => Err(Error::Capture(format!(
-            "录制已放弃（{}）",
-            reason.text()
-        ))),
+        // 收尾异常但文件是好的：按成功交付，附带一句说明。
+        RecordEvent::Saved { outcome, note } => {
+            eprintln!("注意：{note}");
+            Ok(outcome)
+        }
+        RecordEvent::Discarded(reason) => {
+            Err(Error::Capture(format!("录制已放弃（{}）", reason.text())))
+        }
         RecordEvent::Failed(e) => Err(Error::Capture(e)),
     }
 }

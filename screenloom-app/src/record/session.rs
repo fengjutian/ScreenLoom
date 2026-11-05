@@ -23,12 +23,12 @@ use std::time::{Duration, Instant};
 use screenloom_core::{bgra_to_nv12_into, nv12_bytes_len, Error, Result};
 
 use super::audio::{mix, AudioCapture};
-use super::encoder::VideoEncoder;
-use super::wav::WavWriter;
+use super::encoder::Encoder;
 use super::pacer::FramePacer;
 use super::paths::RecordPaths;
 use super::source::FrameSource;
 use super::stats::{Phase, SharedStats, Stage};
+use super::wav::WavWriter;
 use super::RecordOptions;
 
 /// 收尾补写的帧数（编码器流水线尾部会丢 ~3 帧）。
@@ -83,6 +83,14 @@ impl StopReason {
 #[derive(Debug)]
 pub enum RecordEvent {
     Finished(RecordOutcome),
+    /// 收尾异常，但**已录内容已经救回成可播放文件**。
+    ///
+    /// 和 `Failed` 的区别是"用户有没有拿到东西"：这里文件是好的，
+    /// 只是没能按正常流程收尾（比如编码器在写 `moov` 时卡死被 kill）。
+    Saved {
+        outcome: RecordOutcome,
+        note: String,
+    },
     Failed(String),
     Discarded(StopReason),
 }
@@ -320,7 +328,7 @@ fn run_worker(
     let wav_path = paths.partial.with_extension("wav");
     let init = (|| -> Result<(
         FrameSource,
-        VideoEncoder,
+        Encoder,
         Option<AudioCapture>,
         Option<AudioCapture>,
         Option<WavWriter>,
@@ -356,7 +364,7 @@ fn run_worker(
             None
         };
         let (w, h) = stream.size();
-        let enc = VideoEncoder::new(&paths.partial, w, h, opts.fps, opts.bitrate)?;
+        let enc = Encoder::new(&paths.partial, w, h, opts.fps, opts.bitrate)?;
         Ok((stream, enc, system, mic, wav))
     })();
 
@@ -374,6 +382,16 @@ fn run_worker(
         }
     };
 
+    // 编码路径要留痕：子进程被拦下回退进程内时，只有这行日志能说明白。
+    eprintln!(
+        "录屏编码路径: {}",
+        if enc.is_child() {
+            "子进程（卡死可被杀）"
+        } else {
+            "进程内（MF 卡死不可救）"
+        }
+    );
+
     // ---- 倒计时（可被停止取消） ----
     if !countdown(&control, &stats, opts.countdown) {
         paths.discard();
@@ -385,7 +403,10 @@ fn run_worker(
     stats.set_phase(Phase::Recording);
 
     // 丢掉初始化/倒计时期间积压的音频，避免 WAV 比视频长。
-    for a in [system_audio.as_ref(), mic_audio.as_ref()].into_iter().flatten() {
+    for a in [system_audio.as_ref(), mic_audio.as_ref()]
+        .into_iter()
+        .flatten()
+    {
         let _ = a.drain();
     }
 
@@ -419,7 +440,10 @@ fn run_worker(
             // 暂停期间也要刷新心跳，否则看门狗会把"暂停很久"误判成卡死。
             stats.touch();
             // 暂停期间的音频直接丢掉，成片不包含暂停时间。
-            for a in [system_audio.as_ref(), mic_audio.as_ref()].into_iter().flatten() {
+            for a in [system_audio.as_ref(), mic_audio.as_ref()]
+                .into_iter()
+                .flatten()
+            {
                 let _ = a.drain();
             }
             std::thread::sleep(PAUSED_POLL);
@@ -514,6 +538,8 @@ fn run_worker(
     // ---- 收尾：无论成功/失败/放弃，都必须 Finalize ----
     stats.set_phase(Phase::Stopping);
     let active = start.elapsed().saturating_sub(paused_total);
+    // 编码侧的最终账：送出多少帧、丢了多少帧（丢帧只发生在子进程跟不上时）。
+    eprintln!("编码统计: {}", enc.stats_line());
     if !control.discard.load(Ordering::Acquire) && have_frame {
         stats.set_stage(Stage::Tail);
         for _ in 0..TAIL_PADDING_FRAMES {
@@ -551,12 +577,47 @@ fn run_worker(
     }
 
     if let Err(e) = finish_result {
-        // 收尾失败：保留 .partial，明确告诉用户文件可能损坏。
-        stats.set_phase(Phase::Failed);
-        emit(RecordEvent::Failed(format!(
-            "{e}（已保留临时文件 {}）",
-            paths.partial.display()
-        )));
+        // 编码器已经失效（卡死被 kill / MF 报错）：partial 是分片文件，
+        // 先尝试把它救回成正式 MP4 —— 这是「录完拿不到文件」的兜底。
+        stats.set_stage(Stage::Mux);
+        // 不要再试 Finalize（可能永久阻塞），只释放句柄让文件能被重封装。
+        enc.abandon();
+        drop(enc);
+        std::thread::sleep(Duration::from_millis(200));
+        let recovered = match super::mux::remux_video(&paths.partial, &paths.final_path) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(&paths.partial);
+                Some(paths.final_path.clone())
+            }
+            Err(e) => {
+                eprintln!("收尾失败后重封装也没成功: {e}");
+                None
+            }
+        };
+        match recovered {
+            Some(p) => {
+                let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+                stats.set_bytes(bytes);
+                stats.set_elapsed_ms(active.as_millis() as u64);
+                stats.set_phase(Phase::Finished);
+                emit(RecordEvent::Saved {
+                    outcome: RecordOutcome {
+                        path: p,
+                        frames,
+                        elapsed: active,
+                        bytes,
+                    },
+                    note: format!("{e}（收尾异常，已录内容已保存为可播放文件）"),
+                });
+            }
+            None => {
+                stats.set_phase(Phase::Failed);
+                emit(RecordEvent::Failed(format!(
+                    "{e}（已保留临时文件 {}）",
+                    paths.partial.display()
+                )));
+            }
+        }
         return;
     }
 
@@ -679,6 +740,8 @@ fn run_watchdog(
                 let stage = stats.stage();
                 control.aborted.store(true, Ordering::Release);
                 control.request_stop(StopReason::EncoderError);
+                // 卡死的编码子进程读不到 stdin EOF，必须显式收掉，否则会成孤儿。
+                super::encoder_client::kill_all_hosts();
                 on_event(RecordEvent::Failed(format!(
                     "录制在「{}」阶段停滞超过 {} 秒，已中止。\n\
                      临时文件已保留（分片格式，通常仍可播放），下次开始录制时会自动恢复成可播放文件：{}",
@@ -745,9 +808,18 @@ mod tests {
 
     #[test]
     fn muted_source_is_excluded_from_mix() {
-        assert_eq!(mix_with_mute(vec![1, 2], vec![10, 20], true, false), vec![10, 20]);
-        assert_eq!(mix_with_mute(vec![1, 2], vec![10, 20], false, true), vec![1, 2]);
-        assert_eq!(mix_with_mute(vec![1], vec![2], true, true), Vec::<i16>::new());
+        assert_eq!(
+            mix_with_mute(vec![1, 2], vec![10, 20], true, false),
+            vec![10, 20]
+        );
+        assert_eq!(
+            mix_with_mute(vec![1, 2], vec![10, 20], false, true),
+            vec![1, 2]
+        );
+        assert_eq!(
+            mix_with_mute(vec![1], vec![2], true, true),
+            Vec::<i16>::new()
+        );
     }
 
     fn test_paths() -> RecordPaths {
@@ -788,7 +860,11 @@ mod tests {
         let msgs = seen.lock().unwrap();
         assert_eq!(msgs.len(), 1, "应发出一条失败事件");
         assert!(msgs[0].contains("停滞"), "错误信息应说明停滞: {}", msgs[0]);
-        assert!(msgs[0].contains("写帧"), "错误信息应带出卡住的阶段: {}", msgs[0]);
+        assert!(
+            msgs[0].contains("写帧"),
+            "错误信息应带出卡住的阶段: {}",
+            msgs[0]
+        );
     }
 
     /// 正常结束时看门狗必须安静退出，且不得误发失败事件。

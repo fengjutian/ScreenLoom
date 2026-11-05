@@ -159,8 +159,10 @@ impl RecorderController {
     }
 
     pub fn is_paused(&self) -> bool {
-        with_controller(self.hwnd, |c| c.session.as_ref().is_some_and(|s| s.is_paused()))
-            .unwrap_or(false)
+        with_controller(self.hwnd, |c| {
+            c.session.as_ref().is_some_and(|s| s.is_paused())
+        })
+        .unwrap_or(false)
     }
 
     pub fn open_last_folder(&self) {
@@ -263,6 +265,7 @@ impl Controller {
         self.hud.take();
         let reason = match &event {
             RecordEvent::Finished(_) => None,
+            RecordEvent::Saved { .. } => None,
             RecordEvent::Failed(_) => None,
             RecordEvent::Discarded(r) => Some(*r),
         };
@@ -282,6 +285,27 @@ impl Controller {
                     open_folder(&out.path);
                 }
                 self.last_outcome = Some(out);
+            }
+            RecordEvent::Saved { outcome, note } => {
+                // 文件是好的，只是收尾走了异常路径：照常告诉用户文件在哪，
+                // 但要说清楚发生了什么，别让人以为录废了。
+                println!(
+                    "录屏已保存（收尾异常）: {}（{} 帧 / {:.1} 秒 / {:.1} MB）",
+                    outcome.path.display(),
+                    outcome.frames,
+                    outcome.elapsed.as_secs_f64(),
+                    outcome.bytes as f64 / 1_048_576.0
+                );
+                eprintln!("{note}");
+                message_box(&format!(
+                    "录制收尾时出现异常，但已录内容已保存：\n{}\n\n{}",
+                    outcome.path.display(),
+                    note
+                ));
+                if self.cfg.record_open_folder {
+                    open_folder(&outcome.path);
+                }
+                self.last_outcome = Some(outcome);
             }
             RecordEvent::Failed(e) => {
                 eprintln!("录屏失败: {e}");
@@ -318,7 +342,8 @@ fn with_controller<R>(hwnd: HWND, f: impl FnOnce(&mut Controller) -> R) -> Optio
 fn register_class() -> Result<()> {
     let name = wide(CLASS_NAME);
     let mut existing = WNDCLASSEXW::default();
-    if unsafe { GetClassInfoExW(Some(module_handle()), PCWSTR(name.as_ptr()), &mut existing) }.is_ok()
+    if unsafe { GetClassInfoExW(Some(module_handle()), PCWSTR(name.as_ptr()), &mut existing) }
+        .is_ok()
     {
         return Ok(());
     }

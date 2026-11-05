@@ -201,6 +201,8 @@ dependencies = [
  "base64",
  "screenloom-capture",
  "screenloom-core",
+ "screenloom-encoder-host",
+ "screenloom-encoder-protocol",
  "screenloom-ui",
  "serde_json",
  "windows",

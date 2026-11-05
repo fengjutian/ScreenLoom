@@ -19,6 +19,10 @@ full = []
 screenloom-core = { path = "../screenloom-core" }
 screenloom-capture = { path = "../screenloom-capture" }
 screenloom-ui = { path = "../screenloom-ui" }
+screenloom-encoder-protocol = { path = "../screenloom-encoder-protocol" }
+# 编码子进程：app 用 `--encoder-host` 拉起自己，复用同一套 MF 编码代码。
+# 不单独依赖 host exe —— 那样分发时漏带二进制就会退化。
+screenloom-encoder-host = { path = "../screenloom-encoder-host" }
 serde_json = { workspace = true }
 base64 = { workspace = true }
 windows = { workspace = true, features = [
@@ -31,6 +35,7 @@ windows = { workspace = true, features = [
     "Win32_Storage_Xps",
     "Win32_Storage_FileSystem",
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_Media_MediaFoundation",
@@ -44,6 +49,7 @@ windows = { workspace = true, features = [
     "Win32_System_Memory",
     "Win32_System_Ole",
     "Win32_System_SystemInformation",
+    "Win32_System_Threading",
     "Win32_UI_Controls",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",

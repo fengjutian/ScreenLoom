@@ -3,12 +3,12 @@
 //! - 正常模式（父进程拉起）：从 stdin 读控制消息，写 `FMPEG4` 分片 MP4；
 //! - `--drive <out> <frames>`：自测驱动，自己拉起自己，跑完 90 帧的最小闭环。
 //!
+//! 产品实际不用这个 exe —— `screenloom.exe --encoder-host` 复用同一套库代码，
+//! 这样任何分发形态下都不需要额外带一个二进制（见 `src/lib.rs`）。
+//!
 //! 设计见 `doc/编码进程隔离方案.md`。
 
-mod drive;
-mod encoder;
-mod host;
-mod shm;
+use screenloom_encoder_host::{drive, host};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
