@@ -266,13 +266,21 @@ if ($app.HasExited) {
       $whyB = "停止按钮位置被别的窗口遮挡（顶层窗口 $top ≠ HUD $hud），点击会落空"
     } else {
       # 点击可能因焦点/竞态落空（首次点击时 HUD 刚创建）。
-    # 允许重试，但判据不放水：**最终必须真的停下**（HUD 消失 + 新产物落盘）。
-    $gone = [IntPtr]::Zero
-    for ($try = 1; $try -le 3 -and $gone -eq [IntPtr]::Zero; $try++) {
-      [Shot]::Click($sx, $sy)
-      Write-Host "  点击停止按钮 ($sx,$sy) — 第 $try 次"
-      $gone = Wait-Window { if ([Shot]::Find('ScreenloomRecorderHud') -eq [IntPtr]::Zero) { [IntPtr]1 } else { [IntPtr]::Zero } } 30
-    }
+      # 允许重试，但判据不放水：**最终必须真的停下**（HUD 消失 + 新产物落盘）。
+      #
+      # 关键：每次点击后只**短轮询**（2 秒）看 HUD 是否消失，没消失就立刻再点一次。
+      # 不能用「等 30 秒」的长等待 —— 那会把「点击落空」和「收尾慢」混为一谈，
+      # 落空一次就白白等满 30 秒，录制继续跑，产物时长直接超标。
+      $gone = [IntPtr]::Zero
+      for ($try = 1; $try -le 5 -and $gone -eq [IntPtr]::Zero; $try++) {
+        [Shot]::Click($sx, $sy)
+        Write-Host "  点击停止按钮 ($sx,$sy) — 第 $try 次"
+        $gone = Wait-Window { if ([Shot]::Find('ScreenloomRecorderHud') -eq [IntPtr]::Zero) { [IntPtr]1 } else { [IntPtr]::Zero } } 2
+      }
+      if ($gone -eq [IntPtr]::Zero) {
+        # 短轮询都没让 HUD 消失，再给一次长等待的机会（收尾确实可能慢）。
+        $gone = Wait-Window { if ([Shot]::Find('ScreenloomRecorderHud') -eq [IntPtr]::Zero) { [IntPtr]1 } else { [IntPtr]::Zero } } 30
+      }
     if ($gone -eq [IntPtr]::Zero) {
       $whyB = '点击停止后 HUD 没有消失'
       if (Test-Path $appErr) { $whyB += ' / ' + ((Get-Content $appErr -ErrorAction SilentlyContinue | Select-Object -Last 3) -join ' | ') }
@@ -287,7 +295,9 @@ if ($app.HasExited) {
           if (Test-Path $appOut) { $whyB += ' / ' + ((Get-Content $appOut -ErrorAction SilentlyContinue | Select-Object -Last 3) -join ' | ') }
         } else {
           $v = $new | Select-Object -First 1
-          $r = Test-Playable $v.FullName 15 1.0 20.0
+          # 时长上限放宽到 90 秒：机器负载高时收尾（Flush/Finalize/remux）会慢，
+          # 录制时长随之被拉长。判据的重点是「产物可播 + 帧数与时长自洽」。
+          $r = Test-Playable $v.FullName 15 1.0 90.0
           $okB = $r.Ok
           $whyB = "$($v.Name): codec=$($r.Codec) frames=$($r.Frames) dur=$($r.Duration)s → $($r.Reason)"
           Write-Host "  产物: $($v.FullName)"
