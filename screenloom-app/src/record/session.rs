@@ -599,7 +599,13 @@ fn run_watchdog(
             Ok(()) => return true,
             Err(mpsc::RecvTimeoutError::Disconnected) => return true,
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                if !stats.is_stalled(timeout_ms) {
+                // 混流是离线重编码，耗时可能远大于实时写帧；给它更宽的阈值。
+                let timeout = if stats.stage() == Stage::Mux {
+                    timeout_ms.saturating_mul(30)
+                } else {
+                    timeout_ms
+                };
+                if !stats.is_stalled(timeout) {
                     continue;
                 }
                 let stalled = stats.stalled_ms();

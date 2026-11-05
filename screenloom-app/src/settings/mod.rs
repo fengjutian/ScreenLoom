@@ -849,7 +849,7 @@ mod tests {
             }
         }
         assert_eq!(capture.widgets().count(), 13, "截图表单字段数量变了");
-        assert_eq!(record.widgets().count(), 10, "录屏表单字段数量变了");
+        assert_eq!(record.widgets().count(), 11, "录屏表单字段数量变了");
     }
 
     #[test]

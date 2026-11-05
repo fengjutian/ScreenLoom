@@ -52,6 +52,7 @@ pub(crate) enum Field {
     MaxMb,
     Monitor,
     Cursor,
+    AudioSystem,
     Hud,
     OpenFolder,
 }
@@ -81,6 +82,7 @@ impl Field {
         Field::MaxMb,
         Field::Monitor,
         Field::Cursor,
+        Field::AudioSystem,
         Field::Hud,
         Field::OpenFolder,
     ];
@@ -455,6 +457,12 @@ pub(crate) fn record_form(_cfg: &Config, monitors: &[MonitorInfo]) -> Form {
                     vec![
                         check(Field::Cursor, "录制鼠标指针", get_cursor, set_cursor),
                         check(
+                            Field::AudioSystem,
+                            "录制系统声音（结束时混流，失败保留纯视频）",
+                            get_audio_system,
+                            set_audio_system,
+                        ),
+                        check(
                             Field::Hud,
                             "录制时显示 HUD（计时/暂停/停止）",
                             get_hud,
@@ -734,6 +742,14 @@ fn get_cursor(c: &Config) -> bool {
 
 fn set_cursor(c: &mut Config, v: bool) {
     c.record_cursor = v;
+}
+
+fn get_audio_system(c: &Config) -> bool {
+    c.record_audio_system
+}
+
+fn set_audio_system(c: &mut Config, v: bool) {
+    c.record_audio_system = v;
 }
 
 fn get_hud(c: &Config) -> bool {

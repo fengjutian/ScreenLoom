@@ -1,396 +1,198 @@
-# screenloom —— 微信 4.x 截图工具的 Rust 复刻
+# Screenloom
 
-微信 PC 4.x（`Weixin.dll` 内的 `wx::` 命名空间）截图工具的独立复刻实现。
-Windows 专用，Rust 2021。
+Screenloom 是一款使用 Rust 开发的 Windows 截图与录屏工具，支持区域截图、滚动长截图、图片标注、本地 OCR、屏幕录制和可选的 AI 图像处理能力。
 
-> **命名说明**：项目名为 `screenloom`（crate 前缀 `screenloom-*`、Rust 模块 `screenloom_*`、
-> 二进制 `screenloom.exe`、窗口类名 `Screenloom*Window`）。
-> 文档中出现的 `wx::` 是**微信原版**内部命名空间的**文档别名**（本项目与微信的命名空间无关，
-> 两者不要混淆）；取证脚本 `doc/scripts/scan_wechat_shot.py` 用十六进制常量按真实字节检索该命名空间。
+## 主要功能
 
----
+- 区域截图与多显示器支持
+- 箭头、矩形、文字、马赛克等图片标注
+- 滚动长截图与自动拼接
+- 图片复制、保存和窗口置顶
+- 基于 `Windows.Media.Ocr` 的本地文字识别
+- H.264/MP4 屏幕录制
+- 显示器、窗口、区域和虚拟屏录制
+- 录制倒计时、帧率、码率和输出目录设置
+- 可选的系统声音录制
+- 托盘菜单、全局快捷键和深色界面
+- 可选的 AI 问答、翻译和敏感区域打码
 
-## 1. 环境要求
+## 系统要求
 
-| 项 | 要求 |
-|---|---|
-| 操作系统 | Windows 10 1903+ / Windows 11（需 WGC 与 `Windows.Media.Ocr`；本项目在 Win11 build 26200 上实测） |
-| Rust | MSRV **1.75**（本机实测 rustc / cargo **1.96.0**） |
-| 构建工具 | 仅 PE 图标注入需要 `rc.exe` + `cvtres.exe`（**找不到就跳过注入，不让构建失败**） |
-| 网络 | 仅 AI 功能需要（走系统自带 WinHTTP，不引第三方 TLS 栈） |
+| 项目 | 要求 |
+| --- | --- |
+| 操作系统 | Windows 10 1903 或更高版本、Windows 11 |
+| Rust | 1.75 或更高版本 |
+| 构建工具 | Cargo；安装 Visual Studio Build Tools 可获得完整的 Windows 构建环境 |
 
-依赖只有 4 个，刻意保持克制：
+Screenloom 目前仅支持 Windows。OCR、屏幕捕获和媒体编码依赖 Windows 系统 API。
 
-```toml
-windows    = "0.61"   # Win32
-png        = "0.17"   # PNG 编解码
-serde_json = "1"      # AI 请求体
-base64     = "0.22"   # AI 图片 data URL
-```
-
-**用新的 Win32 API 时**，先在 `screenloom-app/Cargo.toml` 打开对应 feature
-（如 `Win32_Graphics_Dwm`、`Win32_UI_Controls`），不要为了单个 API 引新 crate。
-
----
-
-## 2. 代码结构
-
-```
-D:\github\screenloom\
-├─ screenloom-core/      纯逻辑，不碰 Win32：几何 / 图像 / 标注 / 撤销 / 长截图拼接 / NV12 转换 / 配置 / 图标
-├─ screenloom-capture/   抓屏：WGC 主路径 + GDI 兜底 + 显示器枚举 + 虚拟屏整屏合成 + 录屏持续帧源
-├─ screenloom-ui/        渲染交互：GDI+ 管线 / 分层浮窗 / 选区 / 编辑器 / 工具栏 / 贴图窗
-├─ screenloom-app/       应用层：main / hotkey / tray / settings / theme / clipboard / ai / ocr / save / record（录屏）
-├─ website/              官网：React 19 + TypeScript + Vite，部署到 Netlify
-├─ scripts/          E2E 与探针脚本（PowerShell）
-└─ probes/           探针与留证：mftprobe/（MF 编码器探针）· evidence/（取证产物）· e2e_out/（截图输出）
-```
-
-依赖方向**单向**：`app → ui → capture → core`。
-
-`screenloom-app/src/settings/` 按职责拆成 8 个模块：`mod.rs`（窗口过程 + `open()` / `open_record()`）、`form.rs`（**运行时表单模型**：字段 / 控件 / 访问器）、`layout.rs`（几何）、`scroll.rs`（滚动视口数学）、`state.rs`（窗口状态与 `draft: Config` 绑定）、`paint.rs`（自绘 + 滚动条）、`controls.rs`（原生 `EDIT` / `BUTTON` + 位置同步）、`combo.rs`（自绘下拉框）。加一个字段 = `form.rs` 里加一个 `Field` 变体 + 一条 `Row` + 一对 get/set。
-
-| crate | 职责 | 硬约束 |
-|---|---|---|
-| `screenloom-core` | 纯逻辑 | **不许引 Win32**（保持可移植、可单测） |
-| `screenloom-capture` | 抓屏 | 必须提供**整块虚拟屏**图像（不是只抓主屏） |
-| `screenloom-ui` | 渲染交互 | **不许依赖 `screenloom-app`**（否则循环依赖）→ 弹设置窗口只能发请求 |
-| `screenloom-app` | 应用层 | 设置窗口的 Win32 逻辑全在这里 |
-
----
-
-## 3. 编译
+## 构建
 
 ```powershell
-cd D:\github\screenloom
+git clone https://github.com/fengjutian/ScreenLoom.git
+cd ScreenLoom
+cargo build --release -p screenloom-app
+```
 
-# 改 app 层代码时必须先杀掉在跑的进程，否则 exe 被占用 → os error 5
+构建产物位于：
+
+```text
+target\release\screenloom.exe
+```
+
+如果程序正在运行并导致可执行文件被占用，可以先结束进程：
+
+```powershell
 Get-Process -Name screenloom -ErrorAction SilentlyContinue | Stop-Process -Force
-
-cargo build --release -p screenloom-app --bins --examples
 ```
 
-产物：`target\release\screenloom.exe`
+## 使用方法
 
-| 命令 | 说明 |
-|---|---|
-| `cargo build --release -p screenloom-app --bins --examples` | 完整构建（**改 app 层必带 `--bins`**） |
-| `cargo build --release -p screenloom-app` | 只出二进制 |
-| `cargo test --workspace` | 全量单测 |
-| `cargo build --workspace` | 全 workspace |
-
-当前状态：`cargo test --workspace` **158 个测试全绿**（app 87 / core 48 / ui 20 / capture 3）。
-
----
-
-## 4. 运行
+直接启动程序会进入常驻模式，并注册全局快捷键和托盘图标：
 
 ```powershell
-.\target\release\screenloom.exe            # 常驻：注册全局热键（默认 Alt+A）+ 托盘图标
-.\target\release\screenloom.exe --settings # 直接开设置窗口
+.\target\release\screenloom.exe
 ```
 
-### 全部命令行参数
+常用命令：
+
+```powershell
+# 截图一次，保存并复制到剪贴板
+.\target\release\screenloom.exe --once
+
+# 滚动长截图
+.\target\release\screenloom.exe --long
+
+# 打开设置窗口
+.\target\release\screenloom.exe --settings
+
+# 识别剪贴板图片中的文字
+.\target\release\screenloom.exe --ocr
+
+# 录制 10 秒视频
+.\target\release\screenloom.exe --record 10
+
+# 打开录屏设置
+.\target\release\screenloom.exe --record-settings
+```
+
+### 截图参数
 
 | 参数 | 说明 |
-|---|---|
-| （无） | 常驻模式，注册全局热键（默认 `Alt+A`），同时驻留托盘图标 |
-| `--once` | 截一次图（复制到剪贴板 + 存盘）后退出 |
-| `--long` | 长截图（用户滚动 + 自动匹配拼接）模式 |
-| `--sel x,y,w,h` | **脚本化截图**：直接截指定区域，不需要鼠标。坐标是**虚拟屏物理像素** |
-| `--ocr` | 识别剪贴板里图片的文字（本地 `Windows.Media.Ocr`） |
-| `--record N` | 录屏 N 秒，输出 H.264/MP4（默认 `%USERPROFILE%\Videos\Screenloom`） |
-| `--record-out PATH` | 指定录制输出文件（必须是 `.mp4`） |
-| `--record-monitor N` | 录制指定显示器下标（默认主显示器） |
-| `--record-region x,y,w,h` | 录制屏幕区域（虚拟屏物理像素） |
-| `--record-window TITLE` | 按窗口标题录制单个窗口 |
-| `--record-virtual` | 录制整块虚拟屏（过大时等比缩到 1080p 级） |
-| `--record-fps N` | 录制帧率（1–120） |
-| `--record-bitrate B` | 录制码率（bps） |
-| `--record-countdown N` | 开始前倒计时秒数（0–10） |
-| `--record-settings` | 打开录屏设置窗口（帧率/码率/目录/显示器/指针/HUD） |
-| `--hotkey KEY` | 临时覆盖热键，如 `Ctrl+Shift+A` / `Alt+F9` |
-| `--config PATH` | 指定配置文件 |
-| `--theme PATH` | 主题覆盖 JSON（配色/圆角）；**文件改了自动热重载**，不用重启 |
-| `--version` / `-V` | 显示版本 |
-| `--help` / `-h` | 帮助 |
+| --- | --- |
+| `--once` | 完成一次截图后退出 |
+| `--long` | 启用滚动长截图模式 |
+| `--sel x,y,w,h` | 按虚拟屏物理像素截取指定区域 |
+| `--ocr` | 识别剪贴板图片中的文字 |
+| `--hotkey KEY` | 临时指定快捷键，例如 `Ctrl+Shift+A` |
+| `--settings` | 打开常规设置窗口 |
+| `--theme PATH` | 加载自定义主题 JSON |
 
-### AI 能力
+### 录屏参数
 
 | 参数 | 说明 |
-|---|---|
-| `--ask "问题"` | 问 AI（图片默认取剪贴板） |
-| `--translate [语言]` | 翻译图里的文字（默认英文） |
-| `--ai-mosaic` | AI 一键打码（打码后存盘 + 复制） |
-| `--image PATH` | 指定输入图片（默认剪贴板） |
-| `--provider NAME` | `minimax`（默认）/ `deepseek` |
-| `--model NAME` | 指定模型（如 `MiniMax-M3`） |
-| `--endpoint URL` | 指定端点 |
-| `--ai-out DIR` | `--ai-mosaic` 的输出目录 |
-| `--ai-block N` | 马赛克块边长（像素，默认 12） |
-| `--ai-probe` | **连通性探针，不需要 key**（预期 401 = 链路通） |
+| --- | --- |
+| `--record N` | 录制 N 秒并输出 H.264/MP4 文件 |
+| `--record-out PATH` | 指定 `.mp4` 输出路径 |
+| `--record-monitor N` | 录制指定显示器 |
+| `--record-window TITLE` | 按窗口标题录制窗口 |
+| `--record-region x,y,w,h` | 录制指定屏幕区域 |
+| `--record-virtual` | 录制整个虚拟屏 |
+| `--record-fps N` | 设置帧率，范围为 1–120 |
+| `--record-bitrate BPS` | 设置视频码率 |
+| `--record-countdown N` | 设置 0–10 秒的开始倒计时 |
+| `--record-settings` | 打开录屏设置窗口 |
 
-> **API key 来源**：环境变量 `MINIMAX_API_KEY` / `DEEPSEEK_API_KEY`，
-> 或配置文件里的 `ai_key_minimax` / `ai_key_deepseek`。**不硬编码 key**。
->
-> ⚠️ 本机目前**没有 key**，所以 `--ask` / `--translate` / `--ai-mosaic` 的**真实端到端调用尚未验证**。
-> 已验证的是：请求体构造、响应解析、bbox 解析、以及两家端点都拿到 **HTTP 401**（DNS + TLS + HTTP + 请求头格式全对，只差 key）。
+默认截图目录为 `%USERPROFILE%\Pictures\Screenloom`，默认录屏目录为 `%USERPROFILE%\Videos\Screenloom`。
 
-### 录屏
+## AI 功能
 
-| 项 | 说明 |
-|---|---|
-| 入口 | 全局热键 `Alt+R` / 托盘菜单 / HUD 按钮 / `--record N` |
-| 目标 | 单显示器 / 窗口 / 屏幕区域 / 整块虚拟屏；默认 30 fps / 8 Mbps，可配置 |
-| 链路 | WGC 持续抓帧（窗口/显示器）→ GDI 兜底（区域/虚拟屏）→ BGRA→NV12（BT.709 / full range）→ Media Foundation SinkWriter → H.264 / MP4 |
-| 控制 | 倒计时、HUD 计时、暂停/继续、停止；托盘菜单随状态变化；结束自动打开文件夹 |
-| 设置 | 托盘「录屏设置…」或 `--record-settings`：帧率 / 码率 / 倒计时 / 时长上限 / 文件大小上限 / 目录 / 显示器 / 鼠标指针 / HUD |
-| 输出 | `%USERPROFILE%\Videos\Screenloom\<时间戳>.mp4` |
-| 尚不支持 | 音频（系统声/麦克风）、真正的崩溃修复（异常中断的 `.partial` 会改名为 `.recovered.mp4`，可能不完整） |
-| 完整需求 | `doc/录屏功能需求.md`（REC-01～REC-108，按 P0/P1/P2 分阶段） |
+AI 功能是可选能力，需要配置相应服务的 API Key：
 
-### 三处入口（都能打开同一个设置窗口）
+```powershell
+# 针对剪贴板中的图片提问
+.\target\release\screenloom.exe --ask "这张图片里有什么？"
 
-| 入口 | 触发方式 |
-|---|---|
-| 命令行 | `screenloom.exe --settings` |
-| 托盘菜单 | 右键托盘图标 →「设置…」 |
-| 浮窗工具栏 | 截图浮窗上点「设置」 |
+# OCR 后翻译为指定语言
+.\target\release\screenloom.exe --translate 英文
 
-> 托盘图标在 Win11 默认被收进「隐藏图标」溢出区（系统行为，不是 bug）——点任务栏 chevron `^` 展开。
+# 自动识别敏感区域并打码
+.\target\release\screenloom.exe --ai-mosaic
+```
 
-### 浮窗工具栏（选区完成后出现）
+可通过环境变量 `MINIMAX_API_KEY` 或 `DEEPSEEK_API_KEY` 提供密钥。请勿将 API Key 提交到仓库。
 
-| 按钮 | 行为 | 需要 API key |
-|---|---|---|
-| 工具 / 调色板 / 线宽 / 字号 / 撤销 / 重做 | 编辑标注 | 否 |
-| **问 AI** | 弹出输入框，把选区图片 + 问题送去模型 | **是** |
-| **翻译** | 先本地 OCR，再翻成英文 | **是**（OCR 段不需要） |
-| **AI 打码** | 模型标出敏感区域 → 直接变成马赛克标注 | **是** |
-| **提取文字** | **本地** OCR（`Windows.Media.Ocr`），结果进结果面板并写剪贴板 | **否** |
-| **滚动截图** | 对当前选区跑滚动拼接（`Enter` 继续拼 / `Esc` 结束），结果自动存盘 + 复制 | 否 |
-| 设置 / 完成 / 复制 / 保存图片 / 置顶在桌面 / 退出 | — | 否 |
+## 项目结构
 
-> **提取文字**与**滚动截图**都是纯本地能力，**不需要 API key**，无条件可用。
-> 两者共用同一套「后台线程 → `post_ai_reply` 回投 → 结果面板」的机制，所以 UI 线程不会被卡住。
+```text
+screenloom-core/       通用数据结构、配置、图像与几何逻辑
+screenloom-capture/    Windows 屏幕捕获实现
+screenloom-ui/         截图浮层、工具栏和编辑交互
+screenloom-app/        应用入口、托盘、设置、OCR、AI 和录屏
+website/               React + TypeScript 项目网站
+scripts/               开发、验证和端到端测试脚本
+probes/                图形、捕获与编码验证工具
+```
 
----
+主要依赖方向为：
 
-## 5. 路径与配置
+```text
+screenloom-app -> screenloom-ui -> screenloom-capture -> screenloom-core
+```
 
-| 项 | 位置 |
-|---|---|
-| 配置文件 | `%APPDATA%\screenloom\config.txt`（`key=value`，**UTF-8 带 BOM**） |
-| 开发主题 | `screenloom/theme.dev.json`（配色覆盖，配合 `--theme` 热重载） |
-| 截图落盘 | `%USERPROFILE%\Pictures\Screenloom\yyyy-MM-dd_hhmmss_zzz.png` |
-| 应用图标 | `screenloom-app/assets/screenloom.ico`（由 `build.rs` 注入 exe 的 PE 资源节） |
+## 开发与测试
 
-设置窗口管理的 **12 个字段**：`hotkey` / `hide_self` / `toolbar_collapsed` / `copy_format` / `default_dir` /
-`long_screenshot_max` / `long_screenshot_search` / `ai_provider` / `ai_model` / `ai_endpoint` /
-`ai_api_key` / `ai_timeout`。
+运行完整工作区测试：
 
-配置文件里另有 `ai_key_minimax` / `ai_key_deepseek` 两个**按 provider 分开**的 key 位（设置窗口不暴露，
-供命令行 / 环境变量之外的第三种注入方式使用），所以配置文件实际有 14 个键。
+```powershell
+cargo test --workspace
+```
 
----
+检查格式和静态问题：
 
-## 6. 开发循环
+```powershell
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets
+```
 
-### 6.1 一键开发模式（推荐）
+运行项目验证脚本：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_all.ps1
+```
+
+启动自动构建与重启的开发模式：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\dev.ps1
 ```
 
-它做三件事，**零新依赖**（不需要 cargo-watch / sccache / node）：
+## 配置
 
-1. **自动重编译 + 自动重启**：监视 `*/src/**/*.rs`、`Cargo.toml`、`build.rs`，
-   一有改动就 `cargo build` → 杀掉旧进程 → 起新的。release 增量约 **5 秒**一轮。
-2. **主题热重载**：改 `theme.dev.json`（配色 / 圆角）**不重编译**，应用自己在 400ms 内重绘。
-3. **事件日志**：写 `%TEMP%\screenloom_dev.log`，事后可核验它干了什么。
+用户配置默认保存在：
 
-```powershell
-.\scripts\dev.ps1 -Debug          # debug profile（增量 2s，更快）
-.\scripts\dev.ps1 -Mode resident  # 起常驻模式（热键+托盘）而不是设置窗口
-.\scripts\dev.ps1 -NoWatch        # 只编译一次并启动，不监视
+```text
+%APPDATA%\screenloom\config.txt
 ```
 
-### 6.2 主题热重载（改配色不用重编译）
+开发时可以通过 `theme.dev.json` 调整界面主题，并使用 `--theme` 参数加载。主题文件应保存为不带 BOM 的 UTF-8 JSON。
 
-设置窗口的配色与圆角**不是编译期常量**，而是运行时从 JSON 覆盖文件读的：
+## 网站
 
-```json
-{
-  "accent": "#07C160",
-  "bg": "#131518",
-  "radius_panel": 9
-}
-```
-
-保存文件 → 应用 400ms 内重绘（**不重启、不重编译**）。
-可覆盖 26 个颜色键 + 6 个圆角键，键名见 `theme.dev.json`（未列出的键会被忽略）。
-新增滚动条键：`scroll_track` / `scroll_thumb` / `scroll_thumb_hover` / `radius_scroll`，旧 JSON 不写也照常工作。
-颜色接受 `#RRGGBB` / `#AARRGGBB` / `0xAARRGGBB`。
-
-> **注意**：JSON **不能带 BOM**（`serde_json` 不认），写文件时用
-> `[System.IO.File]::WriteAllText($p, $json, (New-Object System.Text.UTF8Encoding($false)))`。
-
-### 6.3 手动循环（不用 watcher）
-
-```powershell
-cd D:\github\screenloom
-
-# 0) 一条命令跑完全部验证（格式 / clippy / 编译 / 单测 / 5 个 E2E）
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_all.ps1
-
-# 1) 编译
-Get-Process -Name screenloom -ErrorAction SilentlyContinue | Stop-Process -Force
-cargo build --release -p screenloom-app --bins --examples
-
-# 2) 测试
-cargo test --workspace
-
-# 3) 端到端
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\e2e_overlay.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\e2e_settings.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\capture_settings_theme.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\capture_theme_hotreload.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\e2e_toolbar_buttons.ps1
-
-# 4) 手动跑
-.\target\release\screenloom.exe --settings --theme .\theme.dev.json
-```
-
-### 6.4 代码质量门禁
-
-| 命令 | 当前状态 |
-|---|---|
-| `cargo fmt --all -- --check` | **0 diff**（全仓已 rustfmt 格式化） |
-| `cargo clippy --workspace --all-targets` | **0 warning / 0 error** |
-| `cargo test --workspace` | **158 个测试全绿**（app 87 / core 48 / ui 20 / capture 3） |
-
-### 调试探针（examples）
-
-拿数据说话，不要靠猜：
-
-```powershell
-# 判定 GDI 屏幕 DC 的坐标原点（用非黑像素数反推，不靠经验）
-cargo run -p screenloom-app --example probe_gdi
-
-# 抓屏幕物理区域（虚拟屏物理坐标，WGC 抓整屏再裁剪）
-cargo run -p screenloom-app --example grab_region -- 100 200 800 600 out.png
-
-# 按窗口标题抓窗口（PrintWindow + PW_RENDERFULLCONTENT）
-cargo run -p screenloom-app --example shot_window -- "screenloom 设置" out.png
-
-# 抓一帧 / 抓整块虚拟屏
-cargo run -p screenloom-capture --example capture_once
-cargo run -p screenloom-capture --example capture_virtual
-
-# 重新生成应用图标
-cargo run -p screenloom-app --example gen_icon
-
-# UI 层自检
-cargo run -p screenloom-ui --example selftest
-
-# OCR 打开临时文件这一步的路径诊断（canonicalize 的 \\?\ 前缀 vs 纯绝对路径）
-cargo run -p screenloom-app --example ocr_probe
-```
-
-### scripts/
-
-| 脚本 | 作用 |
-|---|---|
-| `verify_all.ps1` | **一条命令跑完全部验证**：fmt / clippy / 构建 / 单测 / 5 个 E2E，出汇总表 |
-| `dev.ps1` | **开发模式**：自动重编译 + 自动重启 + 主题热重载提示 |
-| `e2e_overlay.ps1` | 抓屏 / 跨屏选区 / 浮窗渲染（断言存盘尺寸 == 请求的物理像素） |
-| `e2e_settings.ps1` | 设置窗口：改字段 → 点「保存」→ 校验配置写盘 |
-| `e2e_toolbar_buttons.ps1` | **工具栏「提取文字」「滚动截图」**：按钮存在 → OCR 真读出屏幕文字（剪贴板判据）→ 长截图提示窗出现 + 落盘 |
-| `capture_settings_theme.ps1` | 深色设置窗口**真实屏幕**留证 + 下拉菜单展开（带二值判据） |
-| `capture_theme_hotreload.ps1` | **主题热重载验证**：同一 PID 内改 JSON → 配色必须跟着变 |
-| `_shotlib.ps1` | 上面几个脚本共用的抓屏助手（点源使用） |
-| `enum_settings_kids.ps1` | 枚举设置窗口子控件 |
-| `probe_tray_overflow.ps1` / `probe_tray_zoom.ps1` | 托盘溢出区 / 图标放大留证 |
-
----
-
-> 留证截图统一写到 `probes/e2e_out/`（脚本自己建目录），不再落在仓库根目录。
-
-## 7. 八个必踩的坑
-
-1. **编译前先杀 `screenloom-app`** —— exe 被占用会报 `failed to remove file ... 拒绝访问 (os error 5)`。
-2. **只编 `--examples` 不会重编 bin** —— 改完 app 层跑起来还是旧行为，会误判"改了没用"。必须 `--bins --examples`。
-3. **改源文件只能用 `edit` / `write` 工具** —— PowerShell 的 `Get-Content`/`Set-Content` 往返会把 UTF-8 中文变成**双重编码**，且逆变换有损（只能整文件重写）。
-4. **`.ps1` 必须带 UTF-8 BOM**（PowerShell 5.1 读无 BOM 的脚本会按 ANSI 解，中文乱码）；临时日志写 `$env:TEMP`，别写项目目录。
-5. **坐标一律物理像素** —— 逻辑↔物理只走 `screenloom_core::Rect::to_physical` / `to_logical`，别自己乘 scale。
-6. **留证截图必须有二值判据** —— 空图 / 纯黑图和成功图看起来一模一样。断言：① 抓图尺寸 == `GetWindowRect` 尺寸；② 目标窗口真的存在；③ 位图里有**只有该界面才有的特征色像素数**。任一条不过就 `exit 1`。
-7. **`Path::canonicalize()` 的 `\\?\` 前缀 WinRT 不认** —— `StorageFile::GetFileFromPathAsync` 直接报 `0x800700A1`「路径过长」，而路径只有 60 个字符。给 WinRT 的路径要**剥掉 `\\?\`**（UNC 还要把 `\\?\UNC\` 还原成 `\\`）。
-8. **浮窗退出后残留的 `WM_QUIT` 会杀掉下一个消息循环** —— `finish()` 投 `WM_QUIT`，但事件循环是**先看到 outcome 才 break** 的，那条 `WM_QUIT` 留在队列里 → 紧接着的长截图「按 Enter 拼接」一 `GetMessageW` 就退出，**长截图只截到第一帧**。退出前必须把 `WM_QUIT` 抽干。
-
----
-
-## 8. 加功能时往哪放
-
-| 想做的事 | 落点 |
-|---|---|
-| 新配置项 | `screenloom-core/src/config.rs` 加字段 → `screenloom-app/src/settings/form.rs` 加 `Field` 变体 + 一条 `Row` + get/set 访问器（**`EDIT` 创建顺序必须 == 字段顺序**，E2E 按下标取控件） |
-| 改界面配色 / 圆角 | `screenloom-app/src/theme.rs`（纯配色 + 绘制基元，不含 Win32 逻辑） |
-| 新截图工具 / 编辑器 | `screenloom-ui/src/toolbar.rs` + `screenloom-ui/src/overlay.rs` |
-| 新工具栏按钮 | ① `toolbar.rs` 加 `ItemKind` 变体 + `measure()` 宽度 + `build()` 布局 + `paint()` 标签；② `overlay.rs` 加分支（必要时加 `OverlayAction` 变体）；③ `screenloom-app/src/flow.rs` 装 handler / 处理 action。**宽度一定要同步改 `measure()`**，否则工具栏排版错位 |
-| 新 AI 能力 | `screenloom-app/src/ai.rs`（OpenAI 兼容接口，DeepSeek / MiniMax 共用） |
-| 新抓屏后端 | `screenloom-capture/`（WGC 为主，GDI 兜底） |
-| **录屏** | 已落地热键/托盘/HUD、暂停/继续、倒计时、单显示器 H.264/MP4、录屏设置、鼠标指针（WGC 路径）；音频/区域/窗口/虚拟屏待做，见 `doc/录屏功能需求.md` |
-| 图标 | `screenloom-core/src/icon.rs` → `cargo run -p screenloom-app --example gen_icon` |
-
-新增 Win32 API 后，**在 `doc/实现契约.md` 附录 B.3 记一条坑**（那里 42 条全是真机踩出来的）。
-
----
-
-## 9. 已知限制
-
-| 限制 | 说明 |
-|---|---|
-| AI 真实调用未验证 | 本机没有 API key，端到端实调待补 |
-| 微信内表情插入 / 转发 | 依赖腾讯私有协议与服务端，**明确不做** |
-| 自动滚动长截图 | 只做「用户滚动 + 自动匹配拼接」，不做微信那种自动滚 |
-| 长截图拼接未做真机滚动实测 | 入口链路（按钮 → 提示窗 → 落盘 + 复制）**已用 E2E 验证**；多屏连续滚动的匹配/追加已有逐像素单测，但**真实滚动页面**仍建议人工复验 |
-| 多屏 DPI | 选区阶段仍按主屏 `scale`；进入编辑后已按**选区所在显示器**切换 UI/标注缩放，物理选区保持不变 |
-| **录屏缺音频/区域/窗口** | 已支持单显示器、热键/托盘/HUD、暂停、倒计时、帧率/码率/目录/指针配置；**没有**系统声/麦克风、区域/窗口/整块虚拟屏、崩溃恢复 |
-| 标注填充 | 形状填充固定 30% alpha |
-| 工具栏位置 | 固定在虚拟屏底部 |
-| 设置窗口布局 | 内容超过工作区时窗口封顶、右侧出滚动条（滚轮 / `PgUp`·`PgDn` / 拖动 / Tab 自动显现）；不溢出时尺寸与旧版逐像素一致（客户区 652 @1.0 / 829 @1.25）。加字段不再需要重算 `compute_layout` |
-| 自绘控件无障碍 | 设置窗口的按钮 / 复选框 / 下拉框是自绘的，不是标准 BUTTON 类 → UI Automation 识别不到，失去系统级屏幕阅读器语义 |
-| 只做 Windows | `screenloom-core` 保持可移植，但不实现 macOS/Linux |
-
----
-
-## 10. 官网
-
-`website/` 是项目官网，介绍本软件的能力、界面与用法。
-技术栈 React 19 + TypeScript + Vite，纯静态，部署到 Netlify。
+项目网站位于 `website/`：
 
 ```powershell
 cd website
 npm install
-npm run dev        # 本地开发
-npm run build      # 产物在 website/dist
+npm run dev
 ```
 
-部署到 Netlify：Base directory 设为 `website`，Build command `npm run build`，
-Publish directory `dist`。仓库根目录的 `netlify.toml` 已配好（`base = "website"` /
-`publish = "dist"` / Node 22），SPA 回落规则在 `website/public/_redirects`。
-详见 `website/README.md`。
+生产构建：
 
----
+```powershell
+npm run build
+```
 
-## 11. 相关文档
+## 许可证
 
-| 文档 | 内容 |
-|---|---|
-| `doc/WeChat4-截图工具逆向规格书.md` | 微信 4.x 截图工具的逆向分析（函数、结构、行为） |
-| `doc/实现契约.md` | **实现准绳**：分层约定、类型签名、事件流、AI 契约、设置窗口契约、Win32 坑位、验收清单 |
-| `doc/设置表单引擎与滚动方案.md` | **ADR-001（已实现）**：设置模块「表单抽象 + 滚动视口」的决策与设计（不引 GUI 框架的理由、运行时表单模型、滚动几何、兼容性契约、踩坑备忘） |
-| `doc/录屏方案.md` | **录屏预研**：可行性论证与落地设计（MF 编码链路实测证据 + 踩坑清单 + 可借鉴的开源项目 + 风险 + 分阶段）；M0 基础链路已落地 |
-| `doc/录屏功能需求.md` | **录屏功能需求**：入口/目标/音视频/控制/HUD/配置/可靠性/验收清单（REC-01～REC-108）+ P0/P1/P2 实施计划 |
-
-`实现契约.md` §3 的类型签名**即契约，不得擅自更改**；改实现要同步改文档。
+本项目采用 MIT License。
