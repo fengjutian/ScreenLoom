@@ -5,7 +5,7 @@
 
 | 子目录 | 内容 | 入库策略 |
 |---|---|---|
-| `mftprobe/` | 录屏方案（`doc/录屏方案.md`）的 Media Foundation 编码器探针：独立 `[workspace]`，7 个 binary（`probe2`…`probe7`） | 源码入库；`target/`、`out/` 忽略 |
+| `mftprobe/` | 录屏方案（`doc/录屏方案.md`）的 Media Foundation 编码器探针：独立 `[workspace]`，8 个 binary（`probe2`…`probe8`） | 源码入库；`target/`、`out/` 忽略 |
 | `evidence/` | 一次性取证产物：`probe_evidence.mp4`（10 秒 H.264，用于 `doc/录屏方案.md` §3.2 数据复核）、`nv12_test.log`、`probe_evidence_check.log` | `.mp4` 入库；`.log` 忽略 |
 | `e2e_out/` | E2E 与留证脚本（`scripts/*.ps1`）的输出目录 | 忽略；可随时删除重跑 |
 
@@ -14,10 +14,12 @@
 ```powershell
 cargo build --release --manifest-path probes\mftprobe\Cargo.toml
 probes\mftprobe\target\release\probe7.exe 1 300 none   # 1=节流开 300=帧数 none=不设 ALL_SAMPLES_INDEPENDENT
+probes\mftprobe\target\release\probe8.exe write fmp4 90 crash   # FMPEG4 分片容器崩溃测试
 ```
 
 产物统一落到 `probes/mftprobe/out/`（由 `probes/mftprobe/src/lib.rs` 的 `out_path()` 按
 `CARGO_MANIFEST_DIR` 路由，所以挪动目录后不需要改代码），该目录已被 `.gitignore` 忽略。
+沙箱/CI 下仓库目录不可写时，用环境变量 `MF_PROBE_OUT=<可写目录>` 覆盖输出位置。
 
 ## 留证截图
 

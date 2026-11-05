@@ -186,6 +186,87 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
     Ok(())
 }
 
+/// 视频-only 重封装：分片 MP4（`FMPEG4`）→ 普通 MP4。
+///
+/// 只搬压缩样本，不解码、不重编码。录制期间写的是分片容器（崩溃安全），
+/// 停止后用这里换成兼容性更好的普通 MP4。
+pub fn remux_video(video: &Path, out: &Path) -> Result<()> {
+    let com = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
+    let _com = ComGuard(com);
+    let w_video = wide(video);
+    let w_out = wide(out);
+
+    let result = (|| -> Result<()> {
+        // SAFETY: 路径/属性都是有效指针；MF 已在编码器里 Startup。
+        unsafe {
+            let reader = MFCreateSourceReaderFromURL(PCWSTR(w_video.as_ptr()), None)
+                .map_err(|e| Error::Image(format!("打开录制视频失败: {e}")))?;
+            let vstream = MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32;
+            reader
+                .SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS.0 as u32, false)
+                .map_err(|e| Error::Image(format!("关闭源流失败: {e}")))?;
+            reader
+                .SetStreamSelection(vstream, true)
+                .map_err(|e| Error::Image(format!("选择视频流失败: {e}")))?;
+            let vtype = reader
+                .GetNativeMediaType(vstream, 0)
+                .map_err(|e| Error::Image(format!("读取视频类型失败: {e}")))?;
+            reader
+                .SetCurrentMediaType(vstream, None, &vtype)
+                .map_err(|e| Error::Image(format!("设置压缩视频类型失败: {e}")))?;
+
+            let mut attrs: Option<IMFAttributes> = None;
+            MFCreateAttributes(&mut attrs, 0).map_err(mf_err)?;
+            let attrs = attrs.ok_or_else(|| Error::Image("MFCreateAttributes 失败".into()))?;
+            attrs
+                .SetGUID(&MF_TRANSCODE_CONTAINERTYPE, &MFTranscodeContainerType_MPEG4)
+                .map_err(mf_err)?;
+            let sink: IMFSinkWriter =
+                MFCreateSinkWriterFromURL(PCWSTR(w_out.as_ptr()), None, &attrs)
+                    .map_err(|e| Error::Image(format!("创建输出 MP4 失败: {e}")))?;
+            let vidx = sink
+                .AddStream(&vtype)
+                .map_err(|e| Error::Image(format!("添加视频流失败: {e}")))?;
+            sink.SetInputMediaType(vidx, &vtype, None)
+                .map_err(|e| Error::Image(format!("设置视频输入失败: {e}")))?;
+            sink.BeginWriting()
+                .map_err(|e| Error::Image(format!("BeginWriting 失败: {e}")))?;
+
+            loop {
+                let mut actual = 0u32;
+                let mut flags = 0u32;
+                let mut ts = 0i64;
+                let mut sample: Option<IMFSample> = None;
+                reader
+                    .ReadSample(
+                        vstream,
+                        0,
+                        Some(&mut actual),
+                        Some(&mut flags),
+                        Some(&mut ts),
+                        Some(&mut sample),
+                    )
+                    .map_err(|e| Error::Image(format!("读取视频样本失败: {e}")))?;
+                if (flags & MF_SOURCE_READERF_ENDOFSTREAM.0 as u32) != 0 {
+                    break;
+                }
+                let Some(sample) = sample else { continue };
+                let copy = copy_sample(&sample)?;
+                sink.WriteSample(vidx, &copy)
+                    .map_err(|e| Error::Image(format!("写入视频样本失败: {e}")))?;
+            }
+            sink.Finalize().map_err(mf_err)?;
+        }
+        Ok(())
+    })();
+
+    if result.is_err() {
+        // 半成品不留在磁盘上，避免被当成“已恢复”的文件。
+        let _ = std::fs::remove_file(out);
+    }
+    result
+}
+
 unsafe fn write_audio(
     sink: &IMFSinkWriter,
     stream: u32,

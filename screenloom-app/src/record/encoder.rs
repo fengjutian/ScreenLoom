@@ -18,6 +18,7 @@
 //! | `MFCreateSinkWriterFromURL` 传 `file://` URL | `0x8007007B` | 传**完整文件路径** |
 //! | 设 `MF_SINK_WRITER_DISABLE_THROTTLING=1` | `WriteSample` 只入队不等待 → 提交快于编码消费时 sink 内部队列堆积，**录制第 ~3 秒永久卡死**（文件停止增长，停止/时长上限全部失效） | **不要设**；保持默认节流，`WriteSample` 会等到该样本的 pts 时刻 |
 //! | 末尾固定丢 ~3 帧 | 尾部 ~100 ms 内容缺失 | 收尾补写几帧填充（见 [`VideoEncoder::finish`]） |
+//! | 用普通 MP4 容器写临时文件 | 进程被杀后没有 `moov`，文件完全不可播 | 临时文件用 **`FMPEG4` 分片容器**，收尾后 remux 成普通 MP4（§4.8） |
 //!
 //! 完整证据见 `doc/录屏方案.md` §4。
 
@@ -29,7 +30,7 @@ use windows::core::PCWSTR;
 use windows::Win32::Media::MediaFoundation::{
     IMFAttributes, IMFSample, IMFSinkWriter, MFCreateAttributes, MFCreateMediaType,
     MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL, MFMediaType_Audio,
-    MFMediaType_Video, MFStartup, MFTranscodeContainerType_MPEG4, MFVideoFormat_H264,
+    MFMediaType_Video, MFStartup, MFTranscodeContainerType_FMPEG4, MFVideoFormat_H264,
     MFVideoFormat_NV12, MFVideoPrimaries_BT709, MFVideoTransFunc_709, MFAudioFormat_AAC,
     MFAudioFormat_PCM, MF_MT_ALL_SAMPLES_INDEPENDENT, MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
     MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS,
@@ -81,7 +82,7 @@ pub struct VideoEncoder {
 }
 
 impl VideoEncoder {
-    /// 新建编码器，输出 H.264 / MP4。
+    /// 新建编码器，输出 H.264 / **分片 MP4**（`FMPEG4`，崩溃安全）。
     ///
     /// - `path`：输出文件路径（**必须是完整路径**，MF 不接受 `file://` URL）
     /// - `w`, `h`：**偶数**尺寸（NV12 色度 2×2 降采样）
@@ -131,9 +132,15 @@ impl VideoEncoder {
             MFCreateAttributes(&mut attrs, 0).map_err(mf_err)?;
             let attrs =
                 attrs.ok_or_else(|| Error::Image("MFCreateAttributes 没返回属性集".into()))?;
-        // 显式声明 MP4 容器（靠扩展名推断会出问题）
+        // 显式声明**分片** MP4 容器（`FMPEG4`），而不是普通 MP4：
+        //
+        // 普通 MP4 的 `moov` 只在 `Finalize` 时写，进程被杀后文件完全不可播；
+        // 分片容器边写边落盘（`ftyp` + `moov` + 反复 `moof`/`mdat`），
+        // 实测被杀后仍可解码，只丢尾部约 0.3 秒（`doc/录屏方案.md` §4.8，探针 8）。
+        //
+        // 交付前由 session 用 `mux::remux_video` 重新封装成普通 MP4。
         attrs
-            .SetGUID(&MF_TRANSCODE_CONTAINERTYPE, &MFTranscodeContainerType_MPEG4)
+            .SetGUID(&MF_TRANSCODE_CONTAINERTYPE, &MFTranscodeContainerType_FMPEG4)
             .map_err(mf_err)?;
         // **不要**设 `MF_SINK_WRITER_DISABLE_THROTTLING`：
         // 关掉节流后 `WriteSample` 只是把样本塞进 sink 内部队列就返回，
@@ -514,11 +521,9 @@ mod tests {
     use super::*;
 
     /// Media Foundation 的 SinkWriter 在测试进程里不适合并发初始化；
-    /// 编码器相关的测试串行跑，避免 flaky。
-    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
+    /// 编码器相关的测试串行跑，避免 flaky（锁在 `record::test_support`）。
     fn test_lock() -> std::sync::MutexGuard<'static, ()> {
-        TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+        crate::record::test_support::mf_guard()
     }
 
     /// 造一帧 NV12（中灰 + 中性色度）。
@@ -549,6 +554,8 @@ mod tests {
         assert!(has(b"ftyp"), "缺 ftyp");
         assert!(has(b"moov"), "缺 moov（说明没 Finalize）");
         assert!(has(b"mdat"), "缺 mdat");
+        // 临时文件必须是分片容器：崩溃时靠 moof/mdat 逐段落盘才可播。
+        assert!(has(b"moof"), "缺 moof（不是分片 MP4，崩溃后不可播）");
         assert!(bytes.len() > 1000, "产物过小: {} 字节", bytes.len());
 
         let _ = std::fs::remove_file(&path);

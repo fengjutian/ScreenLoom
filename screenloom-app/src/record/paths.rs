@@ -1,7 +1,8 @@
 //! 录制文件路径：临时文件、唯一文件名、收尾原子改名。
 //!
-//! 录制期间写 `<name>.partial.mp4`，只有 `Finalize` 成功后才改成正式名。
-//! 这样异常退出不会留下一个“看起来成功、实际没有 moov”的正式文件。
+//! 录制期间写 `<name>.partial.mp4`（`FMPEG4` 分片容器，崩溃后仍可播）；
+//! 收尾时由 [`super::mux::remux_video`] 重封装成正式 `<name>.mp4`，
+//! 失败才退回改名，避免留下一个“看起来成功、实际不可播”的文件。
 
 use std::path::{Path, PathBuf};
 
@@ -74,40 +75,16 @@ pub fn check_out_ext(path: &Path) -> Result<()> {
 
 /// 扫描并恢复上次异常退出留下的 `.partial.mp4`。
 ///
-/// 现在录制写的是**分片 MP4**，即使没来得及 Finalize，文件本身通常仍可播放；
-/// 这里把非空临时文件改名为 `.recovered.mp4`，空文件直接删除。
-pub fn recover_partials(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return out;
-    };
-    for e in rd.flatten() {
-        let p = e.path();
-        let name = p.file_name().and_then(|s| s.to_str()).unwrap_or_default();
-        if !name.ends_with(".partial.mp4") {
-            continue;
-        }
-        let len = e.metadata().map(|m| m.len()).unwrap_or(0);
-        if len == 0 {
-            let _ = std::fs::remove_file(&p);
-            continue;
-        }
-        let stem = p
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("recording")
-            .trim_end_matches(".partial")
-            .to_string();
-        let dst = p.with_file_name(format!("{stem}.recovered.mp4"));
-        if std::fs::rename(&p, &dst).is_ok() {
-            out.push(dst);
-        }
-    }
-    out
+/// 恢复逻辑见 [`super::recovery::recover_dir`]（优先重封装成普通 MP4）。
+/// 这里只保留路径工具。
+pub fn is_partial(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|s| s.to_str())
+        .is_some_and(|n| n.ends_with(".partial.mp4"))
 }
 
 /// 同名文件存在时追加 `_2`、`_3`…
-fn unique_path(path: &Path) -> PathBuf {
+pub(crate) fn unique_path(path: &Path) -> PathBuf {
     if !path.exists() {
         return path.to_path_buf();
     }
@@ -165,16 +142,8 @@ mod tests {
     }
 
     #[test]
-    fn stale_partial_is_preserved_as_recovered() {
-        let dir = std::env::temp_dir().join("screenloom-record-recover-test");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let p = dir.join("clip.partial.mp4");
-        std::fs::write(&p, b"partial").unwrap();
-        let out = recover_partials(&dir);
-        assert_eq!(out.len(), 1);
-        assert!(out[0].to_string_lossy().ends_with("clip.recovered.mp4"));
-        assert!(!p.exists());
-        let _ = std::fs::remove_dir_all(&dir);
+    fn partial_name_is_recognized() {
+        assert!(is_partial(Path::new("clip.partial.mp4")));
+        assert!(!is_partial(Path::new("clip.mp4")));
     }
 }

@@ -179,7 +179,7 @@ impl RecordSession {
         let paths = RecordPaths::new(opts.out_path.clone())?;
         paths.prepare()?;
         if let Some(parent) = paths.partial.parent() {
-            for p in super::paths::recover_partials(parent) {
+            for p in super::recovery::recover_dir(parent) {
                 eprintln!("已恢复上次异常中断的录制: {}", p.display());
             }
         }
@@ -599,13 +599,24 @@ fn run_worker(
         }
     }
     if !muxed {
-        if let Err(e) = paths.finalize() {
-            stats.set_phase(Phase::Failed);
-            emit(RecordEvent::Failed(format!(
-                "保存失败: {e}（临时文件 {}）",
-                paths.partial.display()
-            )));
-            return;
+        // 视频-only：把分片 MP4 重新封装成普通 MP4（样本直通，不重编码）。
+        stats.set_stage(Stage::Mux);
+        match super::mux::remux_video(&paths.partial, &paths.final_path) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(&paths.partial);
+            }
+            Err(e) => {
+                // 分片文件本身可播：退回改名，保证素材不丢。
+                eprintln!("视频重新封装失败: {e}（保留分片文件）");
+                if let Err(e2) = paths.finalize() {
+                    stats.set_phase(Phase::Failed);
+                    emit(RecordEvent::Failed(format!(
+                        "保存失败: {e2}（临时文件 {}）",
+                        paths.partial.display()
+                    )));
+                    return;
+                }
+            }
         }
         // 混流失败时 WAV 也保留下来，至少音频素材还在。
         if wav.is_some() {
@@ -670,7 +681,7 @@ fn run_watchdog(
                 control.request_stop(StopReason::EncoderError);
                 on_event(RecordEvent::Failed(format!(
                     "录制在「{}」阶段停滞超过 {} 秒，已中止。\n\
-                     临时文件已保留（可能无法播放）：{}",
+                     临时文件已保留（分片格式，通常仍可播放），下次开始录制时会自动恢复成可播放文件：{}",
                     stage.text(),
                     stalled / 1000,
                     paths.partial.display()

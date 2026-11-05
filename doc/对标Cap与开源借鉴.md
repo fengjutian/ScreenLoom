@@ -179,7 +179,7 @@ Abort / 心跳 / 错误码
 4. 收尾后校验产物（编码/时长/帧数/音轨），失败不改成正式名。
 
 **落点**：[paths.rs](../screenloom-app/src/record/paths.rs)、[session.rs](../screenloom-app/src/record/session.rs)、[mux.rs](../screenloom-app/src/record/mux.rs)。
-**前置探针**：MF 是否支持 `MFTranscodeContainerType_FMPEG4`；不支持则退回「分片 MP4 + 手工 remux」。
+**前置探针（已验证）**：MF 支持 `MFTranscodeContainerType_FMPEG4`，且分片文件在**不 Finalize 的情况下仍可解码、可 remux**。实测数据见 [录屏方案.md](录屏方案.md) §4.8（探针 8）。因此分片方案不需要自写 muxer，直接在 MF 上落地。
 
 ### 6.3 光标数据轨
 
@@ -275,7 +275,7 @@ Abort / 心跳 / 错误码
 | # | 风险 | 影响 | 对策 |
 |---|---|---|---|
 | 1 | 进程隔离引入 IPC 与帧传输成本 | 延迟、复杂度上升 | 共享内存传帧；先整体隔离 SinkWriter，性能不达标再评估「自研编码器 + 轻封装」两段式 |
-| 2 | MF 不支持可靠的分片容器 | 方案 6.2 退化为手工 muxer | 先跑探针；不行则自己写最小 MP4 muxer（OBS 有实现记录可参考） |
+| 2 | MF 分片容器不可用（**已排除**） | 无 | 探针 8 实测 FMPEG4 可用、崩溃后可读可 remux；按方案 6.2 落地，验收时用真实录制复核丢帧 |
 | 3 | 光标轨跨 DPI/多屏坐标 | 光标位置错位 | 统一虚拟屏物理像素坐标；单测覆盖 100/125/150/200% |
 | 4 | 编辑器范围失控 | 拖垮主线 | 四项封顶，写进验收；超出走 issue 讨论 |
 | 5 | 许可污染 | 整仓许可被迫变更 | 代码审查检查来源；`scap-*` 依赖需保留声明 |

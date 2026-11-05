@@ -21,10 +21,24 @@ pub mod hud;
 pub mod mux;
 pub mod pacer;
 pub mod paths;
+pub mod recovery;
 pub mod session;
 pub mod source;
 pub mod stats;
 pub mod wav;
+
+/// 测试用：Media Foundation 在同一进程内不适合并发初始化，
+/// 所有会碰 MF 的测试都先拿这把锁。
+#[cfg(test)]
+pub(crate) mod test_support {
+    use std::sync::{Mutex, MutexGuard};
+
+    static MF_LOCK: Mutex<()> = Mutex::new(());
+
+    pub fn mf_guard() -> MutexGuard<'static, ()> {
+        MF_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
