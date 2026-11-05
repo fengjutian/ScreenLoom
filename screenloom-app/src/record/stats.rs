@@ -23,6 +23,8 @@ pub enum Stage {
     Flush = 4,
     /// `IMFSinkWriter::Finalize`（写 moov）。
     Finalize = 5,
+    /// 后置音视频混流。
+    Mux = 6,
 }
 
 impl Stage {
@@ -33,6 +35,7 @@ impl Stage {
             3 => Stage::Tail,
             4 => Stage::Flush,
             5 => Stage::Finalize,
+            6 => Stage::Mux,
             _ => Stage::Idle,
         }
     }
@@ -45,6 +48,7 @@ impl Stage {
             Stage::Tail => "收尾补帧",
             Stage::Flush => "刷新编码器",
             Stage::Finalize => "写文件尾",
+            Stage::Mux => "混流",
         }
     }
 }

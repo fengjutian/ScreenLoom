@@ -22,7 +22,9 @@ use std::time::{Duration, Instant};
 
 use screenloom_core::{bgra_to_nv12_into, nv12_bytes_len, Error, Result};
 
+use super::audio::AudioCapture;
 use super::encoder::VideoEncoder;
+use super::wav::WavWriter;
 use super::pacer::FramePacer;
 use super::paths::RecordPaths;
 use super::source::FrameSource;
@@ -285,16 +287,34 @@ fn run_worker(
         }
     };
 
-    // ---- 初始化：磁盘 → 帧源 → 编码器 ----
-    let init = (|| -> Result<(FrameSource, VideoEncoder)> {
+    // ---- 初始化：磁盘 → 帧源 → 音频 → 视频编码器 ----
+    let wav_path = paths.partial.with_extension("wav");
+    let init = (|| -> Result<(FrameSource, VideoEncoder, Option<AudioCapture>, Option<WavWriter>)> {
         check_free_space(paths.partial.parent())?;
         let stream = FrameSource::open(opts.target, opts.fps, opts.cursor)?;
+        // 音频失败只降级为纯视频，不能因此丢掉整个录制。
+        let audio = if opts.audio_system {
+            match AudioCapture::start_system() {
+                Ok(a) => Some(a),
+                Err(e) => {
+                    eprintln!("系统声音初始化失败，降级为纯视频: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let wav = if audio.is_some() {
+            Some(WavWriter::create(&wav_path)?)
+        } else {
+            None
+        };
         let (w, h) = stream.size();
         let enc = VideoEncoder::new(&paths.partial, w, h, opts.fps, opts.bitrate)?;
-        Ok((stream, enc))
+        Ok((stream, enc, audio, wav))
     })();
 
-    let (mut stream, mut enc) = match init {
+    let (mut stream, mut enc, audio, mut wav) = match init {
         Ok(v) => {
             let _ = init_tx.send(Ok(()));
             v
@@ -347,6 +367,10 @@ fn run_worker(
             );
             // 暂停期间也要刷新心跳，否则看门狗会把"暂停很久"误判成卡死。
             stats.touch();
+            // 暂停期间的音频直接丢掉，成片不包含暂停时间。
+            if let Some(a) = &audio {
+                let _ = a.drain();
+            }
             std::thread::sleep(PAUSED_POLL);
             continue;
         } else if let Some(t) = paused_at.take() {
@@ -387,6 +411,15 @@ fn run_worker(
                 frames += 1;
                 stats.set_frames(frames);
                 stats.set_stage(Stage::Capture);
+            }
+        }
+
+        if let (Some(a), Some(w)) = (&audio, wav.as_mut()) {
+            let pcm = a.drain();
+            if !pcm.is_empty() {
+                if let Err(e) = w.write(&pcm) {
+                    eprintln!("写音频 WAV 失败: {e}");
+                }
             }
         }
 
@@ -439,6 +472,14 @@ fn run_worker(
             frames += 1;
         }
     }
+    // 音频收尾：把缓冲里最后一段写进 WAV，再回填 WAV 头。
+    if let (Some(a), Some(w)) = (&audio, wav.as_mut()) {
+        let pcm = a.drain();
+        if !pcm.is_empty() {
+            let _ = w.write(&pcm);
+        }
+        let _ = w.finish();
+    }
     // 分开标记 Flush / Finalize：MF 内部偶发阻塞时要能定位卡在哪一步。
     stats.set_stage(Stage::Flush);
     let finish_result = enc.flush().and_then(|()| {
@@ -448,6 +489,7 @@ fn run_worker(
 
     if control.discard.load(Ordering::Acquire) {
         paths.discard();
+        let _ = std::fs::remove_file(&wav_path);
         stats.set_phase(Phase::Idle);
         emit(RecordEvent::Discarded(reason));
         return;
@@ -463,13 +505,57 @@ fn run_worker(
         return;
     }
 
-    if let Err(e) = paths.finalize() {
-        stats.set_phase(Phase::Failed);
-        emit(RecordEvent::Failed(format!(
-            "保存失败: {e}（临时文件 {}）",
-            paths.partial.display()
-        )));
-        return;
+    // 释放 SinkWriter 对 .partial.mp4 的独占句柄，否则 SourceReader 打不开它。
+    drop(enc);
+    std::thread::sleep(Duration::from_millis(200));
+
+    // 有音频 → 后置混流；失败则保留纯视频 + WAV，绝不能把视频也弄丢。
+    let mut muxed = false;
+    if let Some(w) = wav.as_ref() {
+        if w.has_data() {
+            stats.set_stage(Stage::Mux);
+            let mux_path = paths.partial.with_extension("muxed.mp4");
+            // 复制一份再读：某些驱动/滤镜会短暂保留写入句柄，直接读会 E_ACCESSDENIED。
+            let mux_src = paths.partial.with_extension("muxsrc.mp4");
+            let src = match std::fs::copy(&paths.partial, &mux_src) {
+                Ok(_) => mux_src.clone(),
+                Err(_) => paths.partial.clone(),
+            };
+            match super::mux::mux(&src, &wav_path, &mux_path) {
+                Ok(()) => match std::fs::rename(&mux_path, &paths.final_path) {
+                    Ok(()) => {
+                        let _ = std::fs::remove_file(&paths.partial);
+                        let _ = std::fs::remove_file(&wav_path);
+                        muxed = true;
+                    }
+                    Err(e) => {
+                        eprintln!("混流文件改名失败: {e}（保留纯视频）");
+                        let _ = std::fs::remove_file(&mux_path);
+                    }
+                },
+                Err(e) => {
+                    eprintln!("音视频混流失败，保留纯视频: {e}");
+                    let _ = std::fs::remove_file(&mux_path);
+                }
+            }
+            if mux_src != paths.partial {
+                let _ = std::fs::remove_file(&mux_src);
+            }
+        }
+    }
+    if !muxed {
+        if let Err(e) = paths.finalize() {
+            stats.set_phase(Phase::Failed);
+            emit(RecordEvent::Failed(format!(
+                "保存失败: {e}（临时文件 {}）",
+                paths.partial.display()
+            )));
+            return;
+        }
+        // 混流失败时 WAV 也保留下来，至少音频素材还在。
+        if wav.is_some() {
+            let _ = std::fs::rename(&wav_path, paths.final_path.with_extension("wav"));
+        }
     }
 
     let bytes = std::fs::metadata(&paths.final_path)
