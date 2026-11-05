@@ -11,13 +11,18 @@ use windows::core::PCWSTR;
 
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 use windows::Win32::Media::MediaFoundation::{
-    IMFAttributes, IMFSample, IMFSinkWriter, MFCreateAttributes, MFCreateMediaType,
-    MFCreateFile, MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL, MFCreateSourceReaderFromByteStream,
-    MFCreateSourceReaderFromURL, MFMediaType_Audio, MFMediaType_Video, MFTranscodeContainerType_MPEG4,
-    MFAudioFormat_AAC, MFAudioFormat_PCM, MF_ACCESSMODE_READ, MF_FILEFLAGS_NONE,
-    MF_OPENMODE_FAIL_IF_NOT_EXIST, MF_MT_AUDIO_AVG_BYTES_PER_SECOND, MF_MT_AUDIO_BITS_PER_SAMPLE,
-    MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS, MF_MT_AUDIO_SAMPLES_PER_SECOND,
-    MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_SINK_WRITER_DISABLE_THROTTLING,
+    IMFAttributes, IMFSample, IMFSinkWriter, MFCreateAttributes, MFCreateFile, MFCreateMediaType,
+    MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL,
+    MFCreateSourceReaderFromByteStream, MFCreateSourceReaderFromURL, MFAudioFormat_AAC,
+    MFAudioFormat_PCM, MFMediaType_Audio, MFMediaType_Video, MFTranscodeContainerType_MPEG4,
+    MFVideoFormat_H264, MFVideoFormat_NV12, MFVideoPrimaries_BT709, MFVideoTransFunc_709,
+    MF_ACCESSMODE_READ, MF_FILEFLAGS_NONE, MF_OPENMODE_FAIL_IF_NOT_EXIST,
+    MF_MT_ALL_SAMPLES_INDEPENDENT, MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
+    MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS,
+    MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_AVG_BITRATE, MF_MT_DEFAULT_STRIDE, MF_MT_FRAME_RATE,
+    MF_MT_FRAME_SIZE, MF_MT_INTERLACE_MODE, MF_MT_MAJOR_TYPE, MF_MT_SAMPLE_SIZE, MF_MT_SUBTYPE,
+    MF_MT_TRANSFER_FUNCTION, MF_MT_VIDEO_NOMINAL_RANGE, MF_MT_VIDEO_PRIMARIES, MF_MT_YUV_MATRIX,
+    MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, MF_SINK_WRITER_DISABLE_THROTTLING,
     MF_SOURCE_READERF_ENDOFSTREAM, MF_SOURCE_READER_ALL_STREAMS,
     MF_SOURCE_READER_FIRST_VIDEO_STREAM, MF_TRANSCODE_CONTAINERTYPE,
 };
@@ -64,9 +69,41 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
         let vtype = reader
             .GetNativeMediaType(vstream, 0)
             .map_err(|e| Error::Audio(format!("读取视频类型失败: {e}")))?;
+        let fsize = vtype.GetUINT64(&MF_MT_FRAME_SIZE).unwrap_or((640u64 << 32) | 480);
+        let (vw, vh) = ((fsize >> 32) as u32, (fsize & 0xFFFF_FFFF) as u32);
+        let frate = vtype.GetUINT64(&MF_MT_FRAME_RATE).unwrap_or((30u64 << 32) | 1);
+        let (fnum, fden) = ((frate >> 32) as u32, (frate & 0xFFFF_FFFF).max(1) as u32);
+        let bitrate = vtype.GetUINT32(&MF_MT_AVG_BITRATE).unwrap_or(8_000_000).max(1_000_000);
+        if vw == 0 || vh == 0 {
+            return Err(Error::Audio("源视频尺寸无效".into()));
+        }
+
+        // 输入：让 SourceReader 解码成 NV12；输出：重新编码 H.264。
+        // 不再透传压缩样本 —— 实测透传会把 2 秒视频截成 1.2 秒。
+        let v_in = MFCreateMediaType().map_err(mf_err)?;
+        v_in.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(mf_err)?;
+        v_in.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_NV12).map_err(mf_err)?;
+        v_in.SetUINT64(&MF_MT_FRAME_RATE, (fnum as u64) << 32 | fden as u64).map_err(mf_err)?;
+        v_in.SetUINT32(&MF_MT_INTERLACE_MODE, 2).map_err(mf_err)?;
+        v_in.SetUINT64(&MF_MT_FRAME_SIZE, (vw as u64) << 32 | vh as u64).map_err(mf_err)?;
+        v_in.SetUINT32(&MF_MT_DEFAULT_STRIDE, vw).map_err(mf_err)?;
+        v_in.SetUINT32(&MF_MT_SAMPLE_SIZE, vw * vh * 3 / 2).map_err(mf_err)?;
+        v_in.SetUINT32(&MF_MT_ALL_SAMPLES_INDEPENDENT, 1).map_err(mf_err)?;
+        v_in.SetUINT32(&MF_MT_VIDEO_NOMINAL_RANGE, 2).map_err(mf_err)?;
+        v_in.SetUINT32(&MF_MT_YUV_MATRIX, 1).map_err(mf_err)?;
+        v_in.SetUINT32(&MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709.0 as u32).map_err(mf_err)?;
+        v_in.SetUINT32(&MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709.0 as u32).map_err(mf_err)?;
         reader
-            .SetCurrentMediaType(vstream, None, &vtype)
-            .map_err(|e| Error::Audio(format!("设置压缩视频类型失败: {e}")))?;
+            .SetCurrentMediaType(vstream, None, &v_in)
+            .map_err(|e| Error::Audio(format!("设置解码输出(NV12)失败: {e}")))?;
+
+        let v_out = MFCreateMediaType().map_err(mf_err)?;
+        v_out.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(mf_err)?;
+        v_out.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_H264).map_err(mf_err)?;
+        v_out.SetUINT64(&MF_MT_FRAME_RATE, (fnum as u64) << 32 | fden as u64).map_err(mf_err)?;
+        v_out.SetUINT32(&MF_MT_INTERLACE_MODE, 2).map_err(mf_err)?;
+        v_out.SetUINT64(&MF_MT_FRAME_SIZE, (vw as u64) << 32 | vh as u64).map_err(mf_err)?;
+        v_out.SetUINT32(&MF_MT_AVG_BITRATE, bitrate).map_err(mf_err)?;
 
         let mut attrs: Option<IMFAttributes> = None;
         MFCreateAttributes(&mut attrs, 0).map_err(mf_err)?;
@@ -74,18 +111,20 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
         attrs
             .SetGUID(&MF_TRANSCODE_CONTAINERTYPE, &MFTranscodeContainerType_MPEG4)
             .map_err(mf_err)?;
-        // 离线 mux：不按真实时间等待。若出现丢帧可临时注释掉对照。
         attrs
             .SetUINT32(&MF_SINK_WRITER_DISABLE_THROTTLING, 1)
+            .map_err(mf_err)?;
+        attrs
+            .SetUINT32(&MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1)
             .map_err(mf_err)?;
         let sink: IMFSinkWriter =
             MFCreateSinkWriterFromURL(PCWSTR(w_out.as_ptr()), None, &attrs)
                 .map_err(|e| Error::Audio(format!("创建输出 MP4 失败: {e}")))?;
 
         let vidx = sink
-            .AddStream(&vtype)
+            .AddStream(&v_out)
             .map_err(|e| Error::Audio(format!("添加视频流失败: {e}")))?;
-        sink.SetInputMediaType(vidx, &vtype, None)
+        sink.SetInputMediaType(vidx, &v_in, None)
             .map_err(|e| Error::Audio(format!("设置视频输入失败: {e}")))?;
 
         let a_out = MFCreateMediaType().map_err(mf_err)?;
