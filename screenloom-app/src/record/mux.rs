@@ -24,10 +24,20 @@ use windows::Win32::Media::MediaFoundation::{
     MF_MT_TRANSFER_FUNCTION, MF_MT_VIDEO_NOMINAL_RANGE, MF_MT_VIDEO_PRIMARIES, MF_MT_YUV_MATRIX,
     MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, MF_SINK_WRITER_DISABLE_THROTTLING,
     MF_SOURCE_READERF_ENDOFSTREAM, MF_SOURCE_READER_ALL_STREAMS,
-    MF_SOURCE_READER_FIRST_VIDEO_STREAM, MF_TRANSCODE_CONTAINERTYPE,
+    MF_SOURCE_READER_FIRST_VIDEO_STREAM, MF_TRANSCODE_CONTAINERTYPE, MFStartup, MF_VERSION,
 };
 
 use super::wav;
+
+/// MF 是进程级生命周期：`mux` / `remux_video` 可能在编码器启动之前被调用
+/// （例如启动时恢复上次残留的 `.partial.mp4`），这里自己保证 MF 已初始化。
+static MF_INIT: std::sync::Once = std::sync::Once::new();
+
+fn ensure_mf() {
+    MF_INIT.call_once(|| unsafe {
+        let _ = MFStartup(MF_VERSION, 0);
+    });
+}
 
 fn wide(path: &Path) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
@@ -36,6 +46,7 @@ fn wide(path: &Path) -> Vec<u16> {
 
 /// 把 `video`（视频-only）+ `wav` 混成 `out`。
 pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
+    ensure_mf();
     // 调用方释放 VideoEncoder 后，worker 线程的 COM 套间可能已经反初始化；
     // SourceReader/SinkWriter 都必须在本线程有 MTA。
     let com = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
@@ -191,6 +202,7 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
 /// 只搬压缩样本，不解码、不重编码。录制期间写的是分片容器（崩溃安全），
 /// 停止后用这里换成兼容性更好的普通 MP4。
 pub fn remux_video(video: &Path, out: &Path) -> Result<()> {
+    ensure_mf();
     let com = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
     let _com = ComGuard(com);
     let w_video = wide(video);

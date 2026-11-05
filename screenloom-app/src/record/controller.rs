@@ -35,6 +35,8 @@ struct Controller {
     hud: Option<RecorderHud>,
     stats: Option<Arc<SharedStats>>,
     last_outcome: Option<super::RecordOutcome>,
+    /// 启动时的后台恢复任务；开录前必须等它结束，避免和录制抢 MF。
+    recovery: Option<std::thread::JoinHandle<()>>,
 }
 
 /// 对外句柄。
@@ -66,6 +68,7 @@ impl RecorderController {
         }
         .map_err(|e| Error::Window(format!("创建录制宿主窗口失败: {e}")))?;
 
+        let recovery_dir = super::record_dir(&cfg);
         let ctl = Box::new(Controller {
             hwnd,
             cfg,
@@ -74,9 +77,18 @@ impl RecorderController {
             hud: None,
             stats: None,
             last_outcome: None,
+            recovery: None,
         });
+        let ctl_ptr = Box::into_raw(ctl);
         unsafe {
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(ctl) as isize);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, ctl_ptr as isize);
+        }
+        // 常驻进程启动时后台扫一遍录像目录：崩溃/强杀留下的 `.partial.mp4`
+        // 转成可播放的正式文件。开录前会 join，避免和录制并发用 MF。
+        if let Some(h) = spawn_recovery(recovery_dir) {
+            unsafe {
+                (*ctl_ptr).recovery = Some(h);
+            }
         }
         Ok(RecorderController { hwnd })
     }
@@ -182,6 +194,10 @@ impl Controller {
     fn start_with(&mut self, target: Option<super::RecordTarget>) -> Result<()> {
         if self.session.is_some() {
             return Ok(());
+        }
+        // 先等启动恢复跑完：它和录制共用 Media Foundation，不能并发。
+        if let Some(h) = self.recovery.take() {
+            let _ = h.join();
         }
         let mut opts = RecordOptions::from_config(&self.cfg)?;
         if let Some(t) = target {
@@ -343,6 +359,17 @@ unsafe extern "system" fn host_wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
         _ => {}
     }
     unsafe { DefWindowProcW(hwnd, msg, wp, lp) }
+}
+
+fn spawn_recovery(dir: PathBuf) -> Option<std::thread::JoinHandle<()>> {
+    std::thread::Builder::new()
+        .name("screenloom-recovery".into())
+        .spawn(move || {
+            for p in super::recovery::recover_dir(&dir) {
+                println!("已恢复上次异常中断的录制: {}", p.display());
+            }
+        })
+        .ok()
 }
 
 fn open_folder(file: &Path) {

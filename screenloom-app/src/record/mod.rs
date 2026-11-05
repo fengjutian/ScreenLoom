@@ -170,6 +170,14 @@ pub fn default_record_path() -> PathBuf {
     default_record_path_in(None)
 }
 
+/// 录制目录：配置优先，否则 `%USERPROFILE%\Videos\Screenloom`。
+pub fn record_dir(cfg: &Config) -> PathBuf {
+    default_record_path_in(cfg.record_dir.as_deref())
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 /// 指定目录下的默认录制路径。
 pub fn default_record_path_in(dir: Option<&Path>) -> PathBuf {
     let dir = match dir {
@@ -224,5 +232,20 @@ mod tests {
         let o = RecordOptions::from_config(&cfg).unwrap();
         assert_eq!(o.duration, Some(Duration::from_secs(30)));
         assert_eq!(o.max_bytes, Some(10 * 1024 * 1024));
+    }
+
+    #[test]
+    fn record_dir_follows_config() {
+        let mut cfg = screenloom_core::Config::default();
+        cfg.record_dir = Some(PathBuf::from(r"D:\clips"));
+        assert_eq!(record_dir(&cfg), PathBuf::from(r"D:\clips"));
+
+        cfg.record_dir = None;
+        let d = record_dir(&cfg);
+        assert!(
+            d.to_string_lossy().to_ascii_lowercase().contains("videos"),
+            "默认目录应在 Videos 下: {}",
+            d.display()
+        );
     }
 }
