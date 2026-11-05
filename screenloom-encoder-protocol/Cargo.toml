@@ -1,0 +1,10 @@
+[package]
+name = "screenloom-encoder-protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "编码子进程控制协议（JSON lines + 共享内存布局）"
+
+[dependencies]
+serde_json = { workspace = true }

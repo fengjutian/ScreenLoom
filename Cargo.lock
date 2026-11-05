@@ -223,6 +223,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "screenloom-encoder-host"
+version = "0.1.0"
+dependencies = [
+ "screenloom-encoder-protocol",
+ "windows",
+]
+
+[[package]]
+name = "screenloom-encoder-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "screenloom-ui"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,21 @@
+[package]
+name = "screenloom-encoder-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "录屏编码子进程：隔离 Media Foundation SinkWriter，卡死可被父进程终止"
+
+[[bin]]
+name = "screenloom-encoder-host"
+path = "src/main.rs"
+
+[dependencies]
+screenloom-encoder-protocol = { path = "../screenloom-encoder-protocol" }
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_Memory",
+    "Win32_Media_MediaFoundation",
+] }

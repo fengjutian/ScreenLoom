@@ -5,6 +5,8 @@ members = [
     "screenloom-capture",
     "screenloom-ui",
     "screenloom-app",
+    "screenloom-encoder-protocol",
+    "screenloom-encoder-host",
 ]
 
 [workspace.package]
