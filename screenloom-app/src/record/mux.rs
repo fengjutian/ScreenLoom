@@ -114,9 +114,6 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
         attrs
             .SetUINT32(&MF_SINK_WRITER_DISABLE_THROTTLING, 1)
             .map_err(mf_err)?;
-        attrs
-            .SetUINT32(&MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1)
-            .map_err(mf_err)?;
         let sink: IMFSinkWriter =
             MFCreateSinkWriterFromURL(PCWSTR(w_out.as_ptr()), None, &attrs)
                 .map_err(|e| Error::Audio(format!("创建输出 MP4 失败: {e}")))?;
@@ -206,9 +203,11 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
             let vpts = sample.GetSampleTime().unwrap_or(0);
             last_vpts = vpts;
             video_count += 1;
-            // 先写视频；音频在视频全部写完后补（离线 mux，不怕队列）。
             let _ = vpts;
-            sink.WriteSample(vidx, &sample)
+            // SinkWriter 可能异步消费 sample；SourceReader 的 buffer 在下次 ReadSample
+            // 后就会失效，必须复制一份，否则输出会在 ~1.3 秒处截断/损坏。
+            let copy = copy_sample(&sample)?;
+            sink.WriteSample(vidx, &copy)
                 .map_err(|e| Error::Audio(format!("写入视频样本失败: {e}")))?;
         }
         while let Some(chunk) = audio_iter.next() {
@@ -260,6 +259,36 @@ unsafe fn write_audio(
     sink.WriteSample(stream, &sample)
         .map_err(|e| Error::Audio(format!("写入音频样本失败: {e}")))?;
     Ok(())
+}
+
+unsafe fn copy_sample(src: &IMFSample) -> Result<IMFSample> {
+    let buffer = src.GetBufferByIndex(0).map_err(mf_err)?;
+    let mut ptr: *mut u8 = std::ptr::null_mut();
+    let mut len: u32 = 0;
+    buffer
+        .Lock(&mut ptr, Some(&mut len), None)
+        .map_err(mf_err)?;
+    let data = std::slice::from_raw_parts(ptr, len as usize);
+    let dst_buf = MFCreateMemoryBuffer(len).map_err(mf_err)?;
+    let mut dst_ptr: *mut u8 = std::ptr::null_mut();
+    let mut dst_len: u32 = 0;
+    dst_buf
+        .Lock(&mut dst_ptr, Some(&mut dst_len), None)
+        .map_err(mf_err)?;
+    std::ptr::copy_nonoverlapping(data.as_ptr(), dst_ptr, len as usize);
+    let _ = dst_buf.SetCurrentLength(len);
+    let _ = dst_buf.Unlock();
+    let _ = buffer.Unlock();
+
+    let out = MFCreateSample().map_err(mf_err)?;
+    out.AddBuffer(&dst_buf).map_err(mf_err)?;
+    if let Ok(t) = src.GetSampleTime() {
+        let _ = out.SetSampleTime(t);
+    }
+    if let Ok(d) = src.GetSampleDuration() {
+        let _ = out.SetSampleDuration(d);
+    }
+    Ok(out)
 }
 
 fn mf_err(e: windows::core::Error) -> Error {

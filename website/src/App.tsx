@@ -46,13 +46,13 @@ function Hero() {
           <span className="badge">仅 5 个依赖 crate</span>
         </div>
         <h1>
-          微信截图工具的
+          Windows 上的
           <br />
-          <span className="accent">独立 Rust 复刻</span>
+          <span className="accent">纯 Rust 截图录屏工具</span>
         </h1>
         <p className="hero-lead">
           区域截图、标注编辑、滚动长截图、本地 OCR、二维码识别、AI 问图翻译打码，
-          以及 H.264 录屏导出——全部在本地完成，不依赖微信进程，也不碰腾讯私有协议。
+          以及 H.264 录屏导出——全部在本地完成，不依赖任何外部进程。
         </p>
         <div className="hero-actions">
           <a className="btn btn-primary" href="#build">
@@ -290,7 +290,7 @@ function Footer() {
   return (
     <footer className="footer">
       <div className="container footer-inner">
-        <span>screenloom · 微信 PC 4.x 截图工具的 Rust 复刻实现</span>
+        <span>screenloom · 纯 Rust 编写的 Windows 截图与录屏工具</span>
         <span style={{ marginLeft: 'auto' }}>
           <a href="#top">回到顶部</a>
         </span>
