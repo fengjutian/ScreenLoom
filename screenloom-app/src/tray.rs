@@ -5,7 +5,7 @@
 //! 资源缺失时（构建时没找到 `rc.exe`）退化为系统应用图标。
 
 use std::cell::RefCell;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
@@ -43,6 +43,10 @@ pub enum TrayCommand {
     RecordStop,
     /// 暂停/继续录屏
     RecordTogglePause,
+    /// 静音麦克风
+    ToggleMicMute,
+    /// 静音系统声
+    ToggleSystemMute,
     /// 打开录像文件夹
     OpenRecordFolder,
     /// 打开录屏设置
@@ -61,9 +65,13 @@ const MENU_RECORD_PAUSE: usize = 2006;
 const MENU_RECORD_FOLDER: usize = 2007;
 const MENU_RECORD_SETTINGS: usize = 2008;
 const MENU_EXIT: usize = 2009;
+const MENU_MIC_MUTE: usize = 2011;
+const MENU_SYSTEM_MUTE: usize = 2012;
 
 /// bit0 = 录制中，bit1 = 已暂停。
 static RECORD_STATE: AtomicU8 = AtomicU8::new(0);
+static MIC_MUTED: AtomicBool = AtomicBool::new(false);
+static SYSTEM_MUTED: AtomicBool = AtomicBool::new(false);
 
 /// 供录制控制器更新托盘菜单文案。
 pub fn set_record_state(recording: bool, paused: bool) {
@@ -74,6 +82,14 @@ pub fn set_record_state(recording: bool, paused: bool) {
 fn record_state() -> (bool, bool) {
     let v = RECORD_STATE.load(Ordering::Relaxed);
     (v & 1 != 0, v & 2 != 0)
+}
+
+pub fn set_mic_muted(muted: bool) {
+    MIC_MUTED.store(muted, Ordering::Relaxed);
+}
+
+pub fn set_system_muted(muted: bool) {
+    SYSTEM_MUTED.store(muted, Ordering::Relaxed);
 }
 
 /// 托盘回调消息（Shell 发给托盘窗口）。
@@ -267,6 +283,28 @@ unsafe fn show_menu(hwnd: HWND) {
             MENU_RECORD_PAUSE,
             PCWSTR(wide(label).as_ptr()),
         );
+        let mic_label = if MIC_MUTED.load(Ordering::Relaxed) {
+            "取消静音麦克风"
+        } else {
+            "静音麦克风"
+        };
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            MENU_MIC_MUTE,
+            PCWSTR(wide(mic_label).as_ptr()),
+        );
+        let sys_label = if SYSTEM_MUTED.load(Ordering::Relaxed) {
+            "取消静音系统声"
+        } else {
+            "静音系统声"
+        };
+        let _ = AppendMenuW(
+            menu,
+            MF_STRING,
+            MENU_SYSTEM_MUTE,
+            PCWSTR(wide(sys_label).as_ptr()),
+        );
     } else {
         let _ = AppendMenuW(
             menu,
@@ -333,6 +371,8 @@ unsafe fn show_menu(hwnd: HWND) {
         MENU_RECORD_WINDOW => fire(TrayCommand::RecordWindow),
         MENU_RECORD_STOP => fire(TrayCommand::RecordStop),
         MENU_RECORD_PAUSE => fire(TrayCommand::RecordTogglePause),
+        MENU_MIC_MUTE => fire(TrayCommand::ToggleMicMute),
+        MENU_SYSTEM_MUTE => fire(TrayCommand::ToggleSystemMute),
         MENU_RECORD_FOLDER => fire(TrayCommand::OpenRecordFolder),
         MENU_RECORD_SETTINGS => fire(TrayCommand::RecordSettings),
         MENU_SETTINGS => fire(TrayCommand::Settings),
@@ -362,6 +402,8 @@ unsafe extern "system" fn tray_wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LP
                 MENU_RECORD_WINDOW => fire(TrayCommand::RecordWindow),
                 MENU_RECORD_STOP => fire(TrayCommand::RecordStop),
                 MENU_RECORD_PAUSE => fire(TrayCommand::RecordTogglePause),
+                MENU_MIC_MUTE => fire(TrayCommand::ToggleMicMute),
+                MENU_SYSTEM_MUTE => fire(TrayCommand::ToggleSystemMute),
                 MENU_RECORD_FOLDER => fire(TrayCommand::OpenRecordFolder),
                 MENU_RECORD_SETTINGS => fire(TrayCommand::RecordSettings),
                 MENU_SETTINGS => fire(TrayCommand::Settings),

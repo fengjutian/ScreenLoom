@@ -105,6 +105,8 @@ Get-Process -Name screenloom -ErrorAction SilentlyContinue | Stop-Process -Force
 
 默认截图目录为 `%USERPROFILE%\Pictures\Screenloom`，默认录屏目录为 `%USERPROFILE%\Videos\Screenloom`。
 
+录屏设置里可开启「录制系统声音」和「录制麦克风」：录制阶段先写视频 + 同名 WAV，结束后自动混流为带 AAC 音轨的 MP4；两路音频在写入 WAV 前混合，混流失败时保留纯视频和 WAV，不会丢失素材。录制中可从托盘菜单单独静音麦克风或系统声，采集继续但静音的一路不写入混音。
+
 ## AI 功能
 
 AI 功能是可选能力，需要配置相应服务的 API Key：

@@ -122,6 +122,26 @@ impl RecorderController {
         with_controller(self.hwnd, |c| c.toggle_pause());
     }
 
+    pub fn toggle_mic_mute(&self) {
+        with_controller(self.hwnd, |c| {
+            if let Some(s) = &c.session {
+                let m = !s.is_mic_muted();
+                s.set_mic_muted(m);
+                crate::tray::set_mic_muted(m);
+            }
+        });
+    }
+
+    pub fn toggle_system_mute(&self) {
+        with_controller(self.hwnd, |c| {
+            if let Some(s) = &c.session {
+                let m = !s.is_system_muted();
+                s.set_system_muted(m);
+                crate::tray::set_system_muted(m);
+            }
+        });
+    }
+
     pub fn is_recording(&self) -> bool {
         with_controller(self.hwnd, |c| c.session.is_some()).unwrap_or(false)
     }
@@ -189,6 +209,8 @@ impl Controller {
         self.stats = Some(stats);
         self.session = Some(session);
         crate::tray::set_record_state(true, false);
+        crate::tray::set_mic_muted(false);
+        crate::tray::set_system_muted(false);
         println!("录屏已开始（{}）", self.cfg.record_hotkey);
         Ok(())
     }

@@ -201,6 +201,7 @@ fn open_form(
     .map_err(|e| Error::Window(format!("创建设置窗口失败: {e}")))?;
 
     state.hwnd = hwnd;
+    let _ = unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) };
     enable_dark_title(hwnd);
     build_controls(hwnd, &mut state);
     state.fill_text();
@@ -849,7 +850,7 @@ mod tests {
             }
         }
         assert_eq!(capture.widgets().count(), 13, "截图表单字段数量变了");
-        assert_eq!(record.widgets().count(), 11, "录屏表单字段数量变了");
+        assert_eq!(record.widgets().count(), 12, "录屏表单字段数量变了");
     }
 
     #[test]

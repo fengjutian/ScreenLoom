@@ -15,9 +15,9 @@ use screenloom_core::{Error, Result};
 
 use windows::core::GUID;
 use windows::Win32::Media::Audio::{
-    eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDeviceEnumerator, MMDeviceEnumerator,
-    AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
-    WAVEFORMATEX, WAVEFORMATEXTENSIBLE,
+    eCapture, eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDeviceEnumerator,
+    MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED,
+    AUDCLNT_STREAMFLAGS_LOOPBACK, WAVEFORMATEX, WAVEFORMATEXTENSIBLE,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_ALL,
@@ -27,6 +27,18 @@ use windows::Win32::System::Com::{
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const CHANNELS: usize = 2;
 const MAX_BUFFER_SAMPLES: usize = SAMPLE_RATE as usize * CHANNELS * 5;
+
+/// 把系统声和麦克风 PCM 等长混合；缺的一路按静音处理。
+pub fn mix(a: &[i16], b: &[i16]) -> Vec<i16> {
+    let n = a.len().max(b.len());
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let x = *a.get(i).unwrap_or(&0) as i32;
+        let y = *b.get(i).unwrap_or(&0) as i32;
+        out.push((x + y).clamp(-32768, 32767) as i16);
+    }
+    out
+}
 
 const IEEE_FLOAT: GUID = GUID::from_u128(0x00000003_0000_0010_8000_00aa00389b71);
 const WAVE_FORMAT_IEEE_FLOAT: u16 = 3;
@@ -44,6 +56,15 @@ impl AudioCapture {
     ///
     /// 初始化失败会返回 `Err`；录制侧可以决定是“放弃音频继续录视频”还是直接报错。
     pub fn start_system() -> Result<AudioCapture> {
+        Self::start(true)
+    }
+
+    /// 启动默认麦克风采集（同样统一成 48k/立体声/i16）。
+    pub fn start_microphone() -> Result<AudioCapture> {
+        Self::start(false)
+    }
+
+    fn start(loopback: bool) -> Result<AudioCapture> {
         let buffer = Arc::new(Mutex::new(VecDeque::new()));
         let stop = Arc::new(AtomicBool::new(false));
         let (init_tx, init_rx) = mpsc::sync_channel::<Result<()>>(1);
@@ -51,8 +72,12 @@ impl AudioCapture {
         let buffer2 = Arc::clone(&buffer);
         let stop2 = Arc::clone(&stop);
         let join = std::thread::Builder::new()
-            .name("screenloom-audio".into())
-            .spawn(move || capture_loop(buffer2, stop2, init_tx))
+            .name(if loopback {
+                "screenloom-audio-system".into()
+            } else {
+                "screenloom-audio-mic".into()
+            })
+            .spawn(move || capture_loop(buffer2, stop2, init_tx, loopback))
             .map_err(|e| Error::Window(format!("启动音频线程失败: {e}")))?;
 
         match init_rx.recv_timeout(Duration::from_secs(5)) {
@@ -111,11 +136,12 @@ fn capture_loop(
     buffer: Arc<Mutex<VecDeque<i16>>>,
     stop: Arc<AtomicBool>,
     init_tx: mpsc::SyncSender<Result<()>>,
+    loopback: bool,
 ) {
     let com = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
-    let result = run_capture(&buffer, &stop, &init_tx);
+    let result = run_capture(&buffer, &stop, &init_tx, loopback);
     if let Err(e) = result {
-        eprintln!("系统声音采集结束: {e}");
+        eprintln!("音频采集结束: {e}");
     }
     if com {
         unsafe { CoUninitialize() };
@@ -126,13 +152,19 @@ fn run_capture(
     buffer: &Arc<Mutex<VecDeque<i16>>>,
     stop: &Arc<AtomicBool>,
     init_tx: &mpsc::SyncSender<Result<()>>,
+    loopback: bool,
 ) -> Result<()> {
     let enumerator: IMMDeviceEnumerator = unsafe {
         CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
             .map_err(|e| Error::Audio(format!("创建音频设备枚举器失败: {e}")))?
     };
-    let device = unsafe { enumerator.GetDefaultAudioEndpoint(eRender, eConsole) }
-        .map_err(|e| Error::Audio(format!("找不到默认扬声器: {e}")))?;
+    let flow = if loopback { eRender } else { eCapture };
+    let device = unsafe { enumerator.GetDefaultAudioEndpoint(flow, eConsole) }.map_err(|e| {
+        Error::Audio(format!(
+            "找不到默认{}: {e}",
+            if loopback { "扬声器" } else { "麦克风" }
+        ))
+    })?;
     let client: IAudioClient = unsafe { device.Activate(CLSCTX_ALL, None) }
         .map_err(|e| Error::Audio(format!("激活音频客户端失败: {e}")))?;
 
@@ -151,7 +183,11 @@ fn run_capture(
     let init = unsafe {
         client.Initialize(
             AUDCLNT_SHAREMODE_SHARED,
-            AUDCLNT_STREAMFLAGS_LOOPBACK,
+            if loopback {
+                AUDCLNT_STREAMFLAGS_LOOPBACK
+            } else {
+                0
+            },
             10_000_000,
             0,
             fmt_ptr,
@@ -319,5 +355,12 @@ mod tests {
             }
             Err(e) => eprintln!("跳过音频测试（无设备/被占用）: {e}"),
         }
+    }
+
+    #[test]
+    fn mix_pads_short_side_and_clamps() {
+        assert_eq!(mix(&[100, -100], &[50]), vec![150, -100]);
+        assert_eq!(mix(&[32767], &[32767]), vec![32767]);
+        assert_eq!(mix(&[], &[]), Vec::<i16>::new());
     }
 }

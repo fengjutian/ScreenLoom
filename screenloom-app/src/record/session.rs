@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use screenloom_core::{bgra_to_nv12_into, nv12_bytes_len, Error, Result};
 
-use super::audio::AudioCapture;
+use super::audio::{mix, AudioCapture};
 use super::encoder::VideoEncoder;
 use super::wav::WavWriter;
 use super::pacer::FramePacer;
@@ -107,6 +107,9 @@ struct Control {
     discard: AtomicBool,
     /// 看门狗判定录制线程卡死后置位：用于阻止 worker 再发一次终态事件。
     aborted: AtomicBool,
+    /// 录制中静音（只影响写入 WAV 的混音，不停采集）。
+    mic_muted: AtomicBool,
+    system_muted: AtomicBool,
     reason: Mutex<StopReason>,
 }
 
@@ -117,6 +120,8 @@ impl Control {
             paused: AtomicBool::new(false),
             discard: AtomicBool::new(false),
             aborted: AtomicBool::new(false),
+            mic_muted: AtomicBool::new(false),
+            system_muted: AtomicBool::new(false),
             reason: Mutex::new(StopReason::User),
         }
     }
@@ -139,6 +144,14 @@ impl Control {
 
     fn is_paused(&self) -> bool {
         self.paused.load(Ordering::Acquire)
+    }
+
+    fn mic_muted(&self) -> bool {
+        self.mic_muted.load(Ordering::Acquire)
+    }
+
+    fn system_muted(&self) -> bool {
+        self.system_muted.load(Ordering::Acquire)
     }
 
     fn reason(&self) -> StopReason {
@@ -255,6 +268,22 @@ impl RecordSession {
         self.control.is_paused()
     }
 
+    pub fn set_mic_muted(&self, muted: bool) {
+        self.control.mic_muted.store(muted, Ordering::Release);
+    }
+
+    pub fn is_mic_muted(&self) -> bool {
+        self.control.mic_muted()
+    }
+
+    pub fn set_system_muted(&self, muted: bool) {
+        self.control.system_muted.store(muted, Ordering::Release);
+    }
+
+    pub fn is_system_muted(&self) -> bool {
+        self.control.system_muted()
+    }
+
     pub fn stop(&self, reason: StopReason) {
         self.control.request_stop(reason);
     }
@@ -289,32 +318,49 @@ fn run_worker(
 
     // ---- 初始化：磁盘 → 帧源 → 音频 → 视频编码器 ----
     let wav_path = paths.partial.with_extension("wav");
-    let init = (|| -> Result<(FrameSource, VideoEncoder, Option<AudioCapture>, Option<WavWriter>)> {
+    let init = (|| -> Result<(
+        FrameSource,
+        VideoEncoder,
+        Option<AudioCapture>,
+        Option<AudioCapture>,
+        Option<WavWriter>,
+    )> {
         check_free_space(paths.partial.parent())?;
         let stream = FrameSource::open(opts.target, opts.fps, opts.cursor)?;
         // 音频失败只降级为纯视频，不能因此丢掉整个录制。
-        let audio = if opts.audio_system {
+        let system = if opts.audio_system {
             match AudioCapture::start_system() {
                 Ok(a) => Some(a),
                 Err(e) => {
-                    eprintln!("系统声音初始化失败，降级为纯视频: {e}");
+                    eprintln!("系统声音初始化失败: {e}");
                     None
                 }
             }
         } else {
             None
         };
-        let wav = if audio.is_some() {
+        let mic = if opts.audio_mic {
+            match AudioCapture::start_microphone() {
+                Ok(a) => Some(a),
+                Err(e) => {
+                    eprintln!("麦克风初始化失败: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let wav = if system.is_some() || mic.is_some() {
             Some(WavWriter::create(&wav_path)?)
         } else {
             None
         };
         let (w, h) = stream.size();
         let enc = VideoEncoder::new(&paths.partial, w, h, opts.fps, opts.bitrate)?;
-        Ok((stream, enc, audio, wav))
+        Ok((stream, enc, system, mic, wav))
     })();
 
-    let (mut stream, mut enc, audio, mut wav) = match init {
+    let (mut stream, mut enc, system_audio, mic_audio, mut wav) = match init {
         Ok(v) => {
             let _ = init_tx.send(Ok(()));
             v
@@ -339,7 +385,7 @@ fn run_worker(
     stats.set_phase(Phase::Recording);
 
     // 丢掉初始化/倒计时期间积压的音频，避免 WAV 比视频长。
-    if let Some(a) = &audio {
+    for a in [system_audio.as_ref(), mic_audio.as_ref()].into_iter().flatten() {
         let _ = a.drain();
     }
 
@@ -373,7 +419,7 @@ fn run_worker(
             // 暂停期间也要刷新心跳，否则看门狗会把"暂停很久"误判成卡死。
             stats.touch();
             // 暂停期间的音频直接丢掉，成片不包含暂停时间。
-            if let Some(a) = &audio {
+            for a in [system_audio.as_ref(), mic_audio.as_ref()].into_iter().flatten() {
                 let _ = a.drain();
             }
             std::thread::sleep(PAUSED_POLL);
@@ -419,8 +465,10 @@ fn run_worker(
             }
         }
 
-        if let (Some(a), Some(w)) = (&audio, wav.as_mut()) {
-            let pcm = a.drain();
+        if let Some(w) = wav.as_mut() {
+            let sys = system_audio.as_ref().map(|a| a.drain()).unwrap_or_default();
+            let mic = mic_audio.as_ref().map(|a| a.drain()).unwrap_or_default();
+            let pcm = mix_with_mute(sys, mic, control.system_muted(), control.mic_muted());
             if !pcm.is_empty() {
                 if let Err(e) = w.write(&pcm) {
                     eprintln!("写音频 WAV 失败: {e}");
@@ -478,8 +526,10 @@ fn run_worker(
         }
     }
     // 音频收尾：把缓冲里最后一段写进 WAV，再回填 WAV 头。
-    if let (Some(a), Some(w)) = (&audio, wav.as_mut()) {
-        let pcm = a.drain();
+    if let Some(w) = wav.as_mut() {
+        let sys = system_audio.as_ref().map(|a| a.drain()).unwrap_or_default();
+        let mic = mic_audio.as_ref().map(|a| a.drain()).unwrap_or_default();
+        let pcm = mix_with_mute(sys, mic, control.system_muted(), control.mic_muted());
         if !pcm.is_empty() {
             let _ = w.write(&pcm);
         }
@@ -575,6 +625,12 @@ fn run_worker(
         elapsed: active,
         bytes,
     }));
+}
+
+fn mix_with_mute(sys: Vec<i16>, mic: Vec<i16>, sys_mute: bool, mic_mute: bool) -> Vec<i16> {
+    let sys = if sys_mute { Vec::new() } else { sys };
+    let mic = if mic_mute { Vec::new() } else { mic };
+    mix(&sys, &mic)
 }
 
 /// 看门狗：监视录制线程的心跳。
@@ -675,6 +731,13 @@ fn free_bytes(dir: Option<&std::path::Path>) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn muted_source_is_excluded_from_mix() {
+        assert_eq!(mix_with_mute(vec![1, 2], vec![10, 20], true, false), vec![10, 20]);
+        assert_eq!(mix_with_mute(vec![1, 2], vec![10, 20], false, true), vec![1, 2]);
+        assert_eq!(mix_with_mute(vec![1], vec![2], true, true), Vec::<i16>::new());
+    }
 
     fn test_paths() -> RecordPaths {
         RecordPaths::new(PathBuf::from("watchdog-test.mp4")).unwrap()

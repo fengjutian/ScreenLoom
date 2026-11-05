@@ -85,6 +85,10 @@ impl PinWindow {
             return;
         };
         state.hwnd = hwnd;
+        // 贴图窗不应被录进录屏/截图。
+        let _ = unsafe {
+            SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
+        };
 
         let mut target = match LayeredTarget::new(w, h) {
             Ok(t) => t,

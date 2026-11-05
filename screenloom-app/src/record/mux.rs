@@ -139,10 +139,8 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
         sink.BeginWriting()
             .map_err(|e| Error::Audio(format!("BeginWriting 失败: {e}")))?;
 
-        let mut audio_iter = pcm.chunks(2048).peekable();
         let mut audio_pts = 0i64;
-        let mut video_count = 0u32;
-        let mut last_vpts = 0i64;
+        let mut video_end = 0i64;
 
         loop {
             let mut actual = 0u32;
@@ -165,26 +163,25 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
             let Some(sample) = sample else {
                 continue;
             };
-            let vpts = sample.GetSampleTime().unwrap_or(0);
-            last_vpts = vpts;
-            video_count += 1;
-            let _ = vpts;
             // SinkWriter 可能异步消费 sample；SourceReader 的 buffer 在下次 ReadSample
-            // 后就会失效，必须复制一份，否则输出会在 ~1.3 秒处截断/损坏。
+            // 后就会失效，复制一份最稳。
             let copy = copy_sample(&sample)?;
+            let t = copy.GetSampleTime().unwrap_or(0);
+            let d = copy.GetSampleDuration().unwrap_or(0);
+            video_end = video_end.max(t + d);
             sink.WriteSample(vidx, &copy)
                 .map_err(|e| Error::Audio(format!("写入视频样本失败: {e}")))?;
         }
+        // 音频不能比视频长：麦克风/系统声缓冲可能多出几百毫秒。
+        let max_samples = (video_end as u128 * wav::SAMPLE_RATE as u128 / 10_000_000) as usize * 2;
+        let pcm = &pcm[..pcm.len().min(max_samples.max(2))];
+        let mut audio_iter = pcm.chunks(2048).peekable();
         while let Some(chunk) = audio_iter.next() {
             write_audio(&sink, aidx, chunk, audio_pts)?;
             audio_pts += (chunk.len() as i64 / 2) * 10_000_000 / wav::SAMPLE_RATE as i64;
         }
 
         sink.Finalize().map_err(mf_err)?;
-        eprintln!(
-            "[mux] video={video_count} last_vpts={last_vpts} audio_pts={audio_pts} pcm_samples={}",
-            pcm.len()
-        );
     }
     Ok(())
 }

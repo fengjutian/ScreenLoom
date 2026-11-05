@@ -66,6 +66,8 @@ pub struct Config {
     pub record_cursor: bool,
     /// 是否录制系统声音（WASAPI loopback，结束时后置混流）
     pub record_audio_system: bool,
+    /// 是否录制默认麦克风（与系统声混合）
+    pub record_audio_mic: bool,
     /// 开始录制前的倒计时（秒，0 = 不等待）
     pub record_countdown: u32,
     /// 是否显示 REC HUD
@@ -113,6 +115,7 @@ impl Default for Config {
             record_bitrate: 8_000_000,
             record_cursor: true,
             record_audio_system: false,
+            record_audio_mic: false,
             record_countdown: 3,
             record_show_hud: true,
             record_open_folder: true,
@@ -192,6 +195,9 @@ impl Config {
                 "record_audio_system" => {
                     cfg.record_audio_system = parse_bool(v).unwrap_or(cfg.record_audio_system)
                 }
+                "record_audio_mic" => {
+                    cfg.record_audio_mic = parse_bool(v).unwrap_or(cfg.record_audio_mic)
+                }
                 "record_countdown" => {
                     cfg.record_countdown = v.parse().unwrap_or(cfg.record_countdown)
                 }
@@ -253,6 +259,7 @@ impl Config {
              record_bitrate = {}\n\
              record_cursor = {}\n\
              record_audio_system = {}\n\
+             record_audio_mic = {}\n\
              record_countdown = {}\n\
              record_show_hud = {}\n\
              record_open_folder = {}\n\
@@ -289,6 +296,7 @@ impl Config {
             self.record_bitrate,
             self.record_cursor,
             self.record_audio_system,
+            self.record_audio_mic,
             self.record_countdown,
             self.record_show_hud,
             self.record_open_folder,

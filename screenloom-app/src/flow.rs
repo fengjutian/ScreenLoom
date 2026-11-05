@@ -83,6 +83,8 @@ pub fn run_hotkey_loop(cfg: &Config, cfg_path: &std::path::Path) -> Result<()> {
         }
         crate::tray::TrayCommand::RecordStop => recorder_for_tray.stop(),
         crate::tray::TrayCommand::RecordTogglePause => recorder_for_tray.toggle_pause(),
+        crate::tray::TrayCommand::ToggleMicMute => recorder_for_tray.toggle_mic_mute(),
+        crate::tray::TrayCommand::ToggleSystemMute => recorder_for_tray.toggle_system_mute(),
         crate::tray::TrayCommand::OpenRecordFolder => recorder_for_tray.open_last_folder(),
         crate::tray::TrayCommand::RecordSettings => {
             if let Err(e) = crate::settings::open_record(&path_owned) {

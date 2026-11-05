@@ -53,6 +53,7 @@ pub(crate) enum Field {
     Monitor,
     Cursor,
     AudioSystem,
+    AudioMic,
     Hud,
     OpenFolder,
 }
@@ -83,6 +84,7 @@ impl Field {
         Field::Monitor,
         Field::Cursor,
         Field::AudioSystem,
+        Field::AudioMic,
         Field::Hud,
         Field::OpenFolder,
     ];
@@ -463,6 +465,12 @@ pub(crate) fn record_form(_cfg: &Config, monitors: &[MonitorInfo]) -> Form {
                             set_audio_system,
                         ),
                         check(
+                            Field::AudioMic,
+                            "录制麦克风（与系统声混合）",
+                            get_audio_mic,
+                            set_audio_mic,
+                        ),
+                        check(
                             Field::Hud,
                             "录制时显示 HUD（计时/暂停/停止）",
                             get_hud,
@@ -750,6 +758,14 @@ fn get_audio_system(c: &Config) -> bool {
 
 fn set_audio_system(c: &mut Config, v: bool) {
     c.record_audio_system = v;
+}
+
+fn get_audio_mic(c: &Config) -> bool {
+    c.record_audio_mic
+}
+
+fn set_audio_mic(c: &mut Config, v: bool) {
+    c.record_audio_mic = v;
 }
 
 fn get_hud(c: &Config) -> bool {

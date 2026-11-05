@@ -154,32 +154,32 @@ impl Toolbar {
                     self.paint_step(g, it.kind, ir);
                 }
                 ItemKind::Undo | ItemKind::Redo => {
-                    let label = if it.kind == ItemKind::Undo {
-                        "撤销"
+                    let glyph = if it.kind == ItemKind::Undo {
+                        "↶"
                     } else {
-                        "重做"
+                        "↷"
                     };
                     let enabled = if it.kind == ItemKind::Undo {
                         canvas.can_undo()
                     } else {
                         canvas.can_redo()
                     };
-                    self.paint_button(g, label, ir, m, enabled);
+                    self.paint_icon_button(g, glyph, ir, m, enabled);
                 }
-                ItemKind::AskAi => self.paint_button(g, "问 AI", ir, m, true),
-                ItemKind::Translate => self.paint_button(g, "翻译", ir, m, true),
-                ItemKind::AiMosaic => self.paint_button(g, "AI打码", ir, m, true),
-                ItemKind::ExtractText => self.paint_button(g, "提取文字", ir, m, true),
-                ItemKind::LongShot => self.paint_button(g, "滚动截图", ir, m, true),
-                ItemKind::QrCode => self.paint_button(g, "识别二维码", ir, m, true),
-                ItemKind::Erase => self.paint_button(g, "消除杂物", ir, m, true),
-                ItemKind::WindowPick => self.paint_button(g, "窗口选择", ir, m, true),
-                ItemKind::Settings => self.paint_button(g, "设置", ir, m, true),
-                ItemKind::Complete => self.paint_button(g, "完成", ir, m, true),
-                ItemKind::Copy => self.paint_button(g, "复制", ir, m, true),
-                ItemKind::Save => self.paint_button(g, "保存图片", ir, m, true),
-                ItemKind::Pin => self.paint_button(g, "置顶在桌面", ir, m, true),
-                ItemKind::Exit => self.paint_button(g, "退出", ir, m, true),
+                ItemKind::AskAi => self.paint_icon_button(g, "AI", ir, m, true),
+                ItemKind::Translate => self.paint_icon_button(g, "文A", ir, m, true),
+                ItemKind::AiMosaic => self.paint_icon_button(g, "▦", ir, m, true),
+                ItemKind::ExtractText => self.paint_icon_button(g, "T", ir, m, true),
+                ItemKind::LongShot => self.paint_icon_button(g, "↕", ir, m, true),
+                ItemKind::QrCode => self.paint_icon_button(g, "⌗", ir, m, true),
+                ItemKind::Erase => self.paint_icon_button(g, "⌫", ir, m, true),
+                ItemKind::WindowPick => self.paint_icon_button(g, "▤", ir, m, true),
+                ItemKind::Settings => self.paint_icon_button(g, "⚙", ir, m, true),
+                ItemKind::Complete => self.paint_icon_button(g, "✓", ir, m, true),
+                ItemKind::Copy => self.paint_icon_button(g, "▣", ir, m, true),
+                ItemKind::Save => self.paint_icon_button(g, "⇩", ir, m, true),
+                ItemKind::Pin => self.paint_icon_button(g, "◆", ir, m, true),
+                ItemKind::Exit => self.paint_icon_button(g, "×", ir, m, true),
                 ItemKind::Toggle => {
                     let c = gdiplus::argb(Rgba::rgb(0xCC, 0xCC, 0xCC));
                     let glyph = if self.collapsed { "»" } else { "«" };
@@ -274,19 +274,23 @@ impl Toolbar {
         );
     }
 
-    fn paint_button(&self, g: &mut Graphics, label: &str, r: Rect, m: &Mapper, enabled: bool) {
+    fn paint_icon_button(&self, g: &mut Graphics, glyph: &str, r: Rect, m: &Mapper, enabled: bool) {
         let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let color = if enabled {
             gdiplus::argb(Rgba::rgb(0xE6, 0xE6, 0xE6))
         } else {
             gdiplus::argb(Rgba::rgb(0x77, 0x77, 0x77))
         };
-        let size = FONT_UI * m.scale;
-        let (tw, th) = g.measure_text(label, size, false);
+        let size = if glyph.chars().count() > 1 {
+            10.0
+        } else {
+            17.0
+        } * m.scale;
+        let (tw, th) = g.measure_text(glyph, size, false);
         g.draw_text(
             x + (w - tw) / 2.0,
             y + (h - th) / 2.0,
-            label,
+            glyph,
             size,
             color,
             false,
@@ -440,17 +444,12 @@ fn measure(factor: f32) -> i32 {
     let tools = 8.0 * (BTN as f32 * s);
     let palette = 9.0 * ((SWATCH as f32 + SWATCH_GAP as f32) * s);
     let step = 2.0 * (78.0 * s); // 线宽组 + 字号组
-    let undo = 2.0 * (40.0 * s);
-    let ai = 52.0 * s + 52.0 * s + 68.0 * s;
-    // 提取文字 / 滚动截图
-    let extra = 68.0 * s + 68.0 * s;
-    // 识别二维码 / 消除杂物 / 窗口选择
-    let more = 68.0 * s + 68.0 * s + 68.0 * s;
-    let actions = 52.0 * s + 44.0 * s + 44.0 * s + 68.0 * s + 82.0 * s + 44.0 * s;
+                                 // 撤销/重做 + 智能工具 + 常用操作，全部使用等宽图标按钮。
+    let icon_actions = 16.0 * (BTN as f32 * s);
     let toggle = TOGGLE_W as f32 * s;
     let seps = 6.0 * (SEP as f32 * s);
     let pad = 2.0 * (PAD as f32 * s);
-    (tools + palette + step + undo + ai + extra + more + actions + toggle + seps + pad) as i32
+    (tools + palette + step + icon_actions + toggle + seps + pad) as i32
 }
 
 /// 生成工具栏条目（逻辑坐标）。
@@ -543,26 +542,28 @@ fn build(rect: Rect, factor: f32) -> Vec<Item> {
     push(ItemKind::FontUp, &mut x, step_y, step_w, step_h, &mut items);
     x += (SEP as f32 * s) as i32;
 
-    let undo_w = (40.0 * s) as i32;
-    push(ItemKind::Undo, &mut x, y, undo_w, bh, &mut items);
-    push(ItemKind::Redo, &mut x, y, undo_w, bh, &mut items);
+    push(ItemKind::Undo, &mut x, y, bw, bh, &mut items);
+    push(ItemKind::Redo, &mut x, y, bw, bh, &mut items);
     x += (SEP as f32 * s) as i32;
 
-    let a = |t: f32| (t * s) as i32;
-    push(ItemKind::AskAi, &mut x, y, a(52.0), bh, &mut items);
-    push(ItemKind::Translate, &mut x, y, a(52.0), bh, &mut items);
-    push(ItemKind::AiMosaic, &mut x, y, a(68.0), bh, &mut items);
-    push(ItemKind::ExtractText, &mut x, y, a(68.0), bh, &mut items);
-    push(ItemKind::LongShot, &mut x, y, a(68.0), bh, &mut items);
-    push(ItemKind::QrCode, &mut x, y, a(68.0), bh, &mut items);
-    push(ItemKind::Erase, &mut x, y, a(68.0), bh, &mut items);
-    push(ItemKind::WindowPick, &mut x, y, a(68.0), bh, &mut items);
-    push(ItemKind::Settings, &mut x, y, a(52.0), bh, &mut items);
-    push(ItemKind::Complete, &mut x, y, a(44.0), bh, &mut items);
-    push(ItemKind::Copy, &mut x, y, a(44.0), bh, &mut items);
-    push(ItemKind::Save, &mut x, y, a(68.0), bh, &mut items);
-    push(ItemKind::Pin, &mut x, y, a(82.0), bh, &mut items);
-    push(ItemKind::Exit, &mut x, y, a(44.0), bh, &mut items);
+    for kind in [
+        ItemKind::AskAi,
+        ItemKind::Translate,
+        ItemKind::AiMosaic,
+        ItemKind::ExtractText,
+        ItemKind::LongShot,
+        ItemKind::QrCode,
+        ItemKind::Erase,
+        ItemKind::WindowPick,
+        ItemKind::Settings,
+        ItemKind::Complete,
+        ItemKind::Copy,
+        ItemKind::Save,
+        ItemKind::Pin,
+        ItemKind::Exit,
+    ] {
+        push(kind, &mut x, y, bw, bh, &mut items);
+    }
 
     let tw = (TOGGLE_W as f32 * s) as i32;
     push(ItemKind::Toggle, &mut x, y, tw, bh, &mut items);

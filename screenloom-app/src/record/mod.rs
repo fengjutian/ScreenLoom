@@ -71,6 +71,8 @@ pub struct RecordOptions {
     pub cursor: bool,
     /// 是否录制系统声音（后置混流）。
     pub audio_system: bool,
+    /// 是否录制默认麦克风（与系统声混合，后置混流）。
+    pub audio_mic: bool,
     /// 最大文件大小；`None` = 不限。
     pub max_bytes: Option<u64>,
 }
@@ -87,6 +89,7 @@ impl RecordOptions {
             countdown: Duration::ZERO,
             cursor: true,
             audio_system: false,
+            audio_mic: false,
             max_bytes: None,
         })
     }
@@ -112,6 +115,7 @@ impl RecordOptions {
             countdown: Duration::from_secs(cfg.record_countdown.min(10) as u64),
             cursor: cfg.record_cursor,
             audio_system: cfg.record_audio_system,
+            audio_mic: cfg.record_audio_mic,
             max_bytes: if cfg.record_max_mb > 0 {
                 Some(cfg.record_max_mb as u64 * 1024 * 1024)
             } else {
