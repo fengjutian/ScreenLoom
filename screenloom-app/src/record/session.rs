@@ -338,6 +338,11 @@ fn run_worker(
 
     stats.set_phase(Phase::Recording);
 
+    // 丢掉初始化/倒计时期间积压的音频，避免 WAV 比视频长。
+    if let Some(a) = &audio {
+        let _ = a.drain();
+    }
+
     // ---- 录制循环 ----
     let (w, h) = stream.size();
     let mut nv12 = vec![0u8; nv12_bytes_len(w, h)];

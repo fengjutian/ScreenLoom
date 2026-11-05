@@ -74,7 +74,7 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
         attrs
             .SetGUID(&MF_TRANSCODE_CONTAINERTYPE, &MFTranscodeContainerType_MPEG4)
             .map_err(mf_err)?;
-        // 离线 mux，不能按 pts 等待真实时间。
+        // 离线 mux：不按真实时间等待。若出现丢帧可临时注释掉对照。
         attrs
             .SetUINT32(&MF_SINK_WRITER_DISABLE_THROTTLING, 1)
             .map_err(mf_err)?;
@@ -167,13 +167,8 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
             let vpts = sample.GetSampleTime().unwrap_or(0);
             last_vpts = vpts;
             video_count += 1;
-            while audio_pts <= vpts {
-                let Some(chunk) = audio_iter.next() else {
-                    break;
-                };
-                write_audio(&sink, aidx, chunk, audio_pts)?;
-                audio_pts += (chunk.len() as i64 / 2) * 10_000_000 / wav::SAMPLE_RATE as i64;
-            }
+            // 先写视频；音频在视频全部写完后补（离线 mux，不怕队列）。
+            let _ = vpts;
             sink.WriteSample(vidx, &sample)
                 .map_err(|e| Error::Audio(format!("写入视频样本失败: {e}")))?;
         }
