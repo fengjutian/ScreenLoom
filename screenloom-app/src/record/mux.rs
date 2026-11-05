@@ -12,9 +12,10 @@ use windows::core::PCWSTR;
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 use windows::Win32::Media::MediaFoundation::{
     IMFAttributes, IMFSample, IMFSinkWriter, MFCreateAttributes, MFCreateMediaType,
-    MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL, MFCreateSourceReaderFromURL,
-    MFMediaType_Audio, MFMediaType_Video, MFTranscodeContainerType_MPEG4, MFAudioFormat_AAC,
-    MFAudioFormat_PCM, MF_MT_AUDIO_AVG_BYTES_PER_SECOND, MF_MT_AUDIO_BITS_PER_SAMPLE,
+    MFCreateFile, MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL, MFCreateSourceReaderFromByteStream,
+    MFCreateSourceReaderFromURL, MFMediaType_Audio, MFMediaType_Video, MFTranscodeContainerType_MPEG4,
+    MFAudioFormat_AAC, MFAudioFormat_PCM, MF_ACCESSMODE_READ, MF_FILEFLAGS_NONE,
+    MF_OPENMODE_FAIL_IF_NOT_EXIST, MF_MT_AUDIO_AVG_BYTES_PER_SECOND, MF_MT_AUDIO_BITS_PER_SAMPLE,
     MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS, MF_MT_AUDIO_SAMPLES_PER_SECOND,
     MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_SINK_WRITER_DISABLE_THROTTLING,
     MF_SOURCE_READERF_ENDOFSTREAM, MF_SOURCE_READER_ALL_STREAMS,
@@ -44,8 +45,15 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
 
     // SAFETY: 路径/属性都是有效指针；MF 已在编码器里 Startup。
     unsafe {
-        let reader = MFCreateSourceReaderFromURL(PCWSTR(w_video.as_ptr()), None)
-            .map_err(|e| Error::Audio(format!("打开录制视频失败: {e}")))?;
+        let byte_stream = MFCreateFile(
+            MF_ACCESSMODE_READ,
+            MF_OPENMODE_FAIL_IF_NOT_EXIST,
+            MF_FILEFLAGS_NONE,
+            PCWSTR(w_video.as_ptr()),
+        )
+        .map_err(|e| Error::Audio(format!("打开录制视频失败: {e}")))?;
+        let reader = MFCreateSourceReaderFromByteStream(&byte_stream, None)
+            .map_err(|e| Error::Audio(format!("创建 SourceReader 失败: {e}")))?;
         let vstream = MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32;
         reader
             .SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS.0 as u32, false)
@@ -132,6 +140,8 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
 
         let mut audio_iter = pcm.chunks(2048).peekable();
         let mut audio_pts = 0i64;
+        let mut video_count = 0u32;
+        let mut last_vpts = 0i64;
 
         loop {
             let mut actual = 0u32;
@@ -155,6 +165,8 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
                 continue;
             };
             let vpts = sample.GetSampleTime().unwrap_or(0);
+            last_vpts = vpts;
+            video_count += 1;
             while audio_pts <= vpts {
                 let Some(chunk) = audio_iter.next() else {
                     break;
@@ -173,6 +185,10 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
         sink.Flush(vidx).map_err(mf_err)?;
         sink.Flush(aidx).map_err(mf_err)?;
         sink.Finalize().map_err(mf_err)?;
+        eprintln!(
+            "[mux] video={video_count} last_vpts={last_vpts} audio_pts={audio_pts} pcm_samples={}",
+            pcm.len()
+        );
     }
     Ok(())
 }
