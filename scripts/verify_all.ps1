@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Continue'
 
-# 一条命令跑完全部验证：格式 / 静态检查 / 编译 / 单测 / 4 个端到端。
+# 一条命令跑完全部验证：格式 / 静态检查 / 编译 / 单测 / 5 个端到端。
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File D:\github\screenloom\scripts\verify_all.ps1
 #
@@ -46,7 +46,8 @@ $e2e = @(
   @{ n = 'E2E 设置保存';   f = 'e2e_settings.ps1' },
   @{ n = '深色外观留证';  f = 'capture_settings_theme.ps1' },
   @{ n = '主题热重载';    f = 'capture_theme_hotreload.ps1' },
-  @{ n = 'E2E 工具栏按钮'; f = 'e2e_toolbar_buttons.ps1' }
+  @{ n = 'E2E 工具栏按钮'; f = 'e2e_toolbar_buttons.ps1' },
+  @{ n = 'E2E 录屏链路';   f = 'e2e_record.ps1' }
 )
 foreach ($e in $e2e) {
   $out = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $sc $e.f) 2>&1 | Out-String
