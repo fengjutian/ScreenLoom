@@ -15,7 +15,7 @@ use windows::Win32::Media::MediaFoundation::{
     MFCreateMemoryBuffer, MFCreateSample, MFCreateSinkWriterFromURL,
     MFCreateSourceReaderFromByteStream, MFCreateSourceReaderFromURL, MFAudioFormat_AAC,
     MFAudioFormat_PCM, MFMediaType_Audio, MFMediaType_Video, MFTranscodeContainerType_MPEG4,
-    MFVideoFormat_H264, MFVideoFormat_NV12, MFVideoPrimaries_BT709, MFVideoTransFunc_709,
+    MFVideoFormat_H264, MFVideoFormat_NV12, MFVideoFormat_RGB32, MFVideoPrimaries_BT709, MFVideoTransFunc_709,
     MF_ACCESSMODE_READ, MF_FILEFLAGS_NONE, MF_OPENMODE_FAIL_IF_NOT_EXIST,
     MF_MT_ALL_SAMPLES_INDEPENDENT, MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
     MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS,
@@ -82,20 +82,13 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
         // 不再透传压缩样本 —— 实测透传会把 2 秒视频截成 1.2 秒。
         let v_in = MFCreateMediaType().map_err(mf_err)?;
         v_in.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(mf_err)?;
-        v_in.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_NV12).map_err(mf_err)?;
+        v_in.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_RGB32).map_err(mf_err)?;
         v_in.SetUINT64(&MF_MT_FRAME_RATE, (fnum as u64) << 32 | fden as u64).map_err(mf_err)?;
         v_in.SetUINT32(&MF_MT_INTERLACE_MODE, 2).map_err(mf_err)?;
         v_in.SetUINT64(&MF_MT_FRAME_SIZE, (vw as u64) << 32 | vh as u64).map_err(mf_err)?;
-        v_in.SetUINT32(&MF_MT_DEFAULT_STRIDE, vw).map_err(mf_err)?;
-        v_in.SetUINT32(&MF_MT_SAMPLE_SIZE, vw * vh * 3 / 2).map_err(mf_err)?;
-        v_in.SetUINT32(&MF_MT_ALL_SAMPLES_INDEPENDENT, 1).map_err(mf_err)?;
-        v_in.SetUINT32(&MF_MT_VIDEO_NOMINAL_RANGE, 2).map_err(mf_err)?;
-        v_in.SetUINT32(&MF_MT_YUV_MATRIX, 1).map_err(mf_err)?;
-        v_in.SetUINT32(&MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709.0 as u32).map_err(mf_err)?;
-        v_in.SetUINT32(&MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709.0 as u32).map_err(mf_err)?;
         reader
             .SetCurrentMediaType(vstream, None, &v_in)
-            .map_err(|e| Error::Audio(format!("设置解码输出(NV12)失败: {e}")))?;
+            .map_err(|e| Error::Audio(format!("设置解码输出(RGB32)失败: {e}")))?;
 
         let v_out = MFCreateMediaType().map_err(mf_err)?;
         v_out.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(mf_err)?;
@@ -111,8 +104,9 @@ pub fn mux(video: &Path, wav_path: &Path, out: &Path) -> Result<()> {
         attrs
             .SetGUID(&MF_TRANSCODE_CONTAINERTYPE, &MFTranscodeContainerType_MPEG4)
             .map_err(mf_err)?;
+        // 离线 mux 也不能完全关掉节流：编码器队列满时会直接丢样本。
         attrs
-            .SetUINT32(&MF_SINK_WRITER_DISABLE_THROTTLING, 1)
+            .SetUINT32(&MF_SINK_WRITER_DISABLE_THROTTLING, 0)
             .map_err(mf_err)?;
         let sink: IMFSinkWriter =
             MFCreateSinkWriterFromURL(PCWSTR(w_out.as_ptr()), None, &attrs)

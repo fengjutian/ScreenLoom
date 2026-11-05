@@ -111,8 +111,7 @@ impl RecordOptions {
             },
             countdown: Duration::from_secs(cfg.record_countdown.min(10) as u64),
             cursor: cfg.record_cursor,
-            // 音频重编码/后置混流仍未通过时长校验，保持关闭。
-            audio_system: false,
+            audio_system: cfg.record_audio_system,
             max_bytes: if cfg.record_max_mb > 0 {
                 Some(cfg.record_max_mb as u64 * 1024 * 1024)
             } else {
