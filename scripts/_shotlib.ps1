@@ -27,6 +27,8 @@ public static class Shot {
   [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, IntPtr e);
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern bool PostMessageW(IntPtr h, uint msg, IntPtr wp, IntPtr lp);
   [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
@@ -72,6 +74,42 @@ public static class Shot {
     mouse_event(0x0002, 0, 0, 0, IntPtr.Zero); // LEFTDOWN
     System.Threading.Thread.Sleep(60);
     mouse_event(0x0004, 0, 0, 0, IntPtr.Zero); // LEFTUP
+  }
+  // 精确点击：先把光标移到目标点并**确认它真的在那儿**，再点击。
+  //
+  // 为什么不能只用 SetCursorPos + mouse_event：
+  // SetCursorPos 是异步生效的，紧接着的 mouse_event 可能用**旧位置**投递，
+  // 实测点击落在按钮左边 63 像素（表现为"HUD 被拖走"而不是点中按钮）。
+  // 先确认光标到位，就把这一类漂移挡掉了。
+  //
+  // 也不用 SendInput 的绝对坐标：多显示器且虚拟屏原点在负数时归一化不可靠。
+  public static void ClickExact(int x, int y) {
+    for (int i = 0; i < 6; i++) {
+      SetCursorPos(x, y);
+      System.Threading.Thread.Sleep(120);
+      POINT p; GetCursorPos(out p);
+      if (p.X == x && p.Y == y) break;
+    }
+    mouse_event(0x0002, 0, 0, 0, IntPtr.Zero); // LEFTDOWN
+    System.Threading.Thread.Sleep(60);
+    mouse_event(0x0004, 0, 0, 0, IntPtr.Zero); // LEFTUP
+  }
+  public static string CursorPos() {
+    POINT p; GetCursorPos(out p);
+    return p.X + "," + p.Y;
+  }
+  // 往窗口的**客户区**坐标发一次点击（WM_LBUTTONDOWN + WM_LBUTTONUP）。
+  //
+  // 为什么不用真实鼠标：这台机器上可能同时有别的自动化在驱动鼠标，
+  // 实测 SetCursorPos 之后光标会被抢走（目标 (1861,956) 实际落在
+  // (1214,1026)），点击因此打在按钮外面 —— HUD 会把它当成"拖动窗口"，
+  // 测试随机失败。窗口消息是确定性的，而且 HUD 的按钮逻辑本来就是
+  // "拿客户区坐标判断点在不在按钮矩形里"，这条路径才是被测对象。
+  public static void ClickClient(IntPtr h, int x, int y) {
+    IntPtr lp = (IntPtr)((y << 16) | (x & 0xFFFF));
+    PostMessageW(h, 0x0201, (IntPtr)1, lp);  // WM_LBUTTONDOWN
+    System.Threading.Thread.Sleep(40);
+    PostMessageW(h, 0x0202, (IntPtr)0, lp);  // WM_LBUTTONUP
   }
   // 真实鼠标拖拽：比 PostMessage 可靠 —— 合成消息会被**真实鼠标活动**插队，
   // 真实输入则只有这一个来源。

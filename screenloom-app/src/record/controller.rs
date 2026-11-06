@@ -234,6 +234,9 @@ impl Controller {
     }
 
     fn stop(&mut self, reason: StopReason) {
+        // HUD 立刻消失：用户点了停止就该马上有反馈，
+        // 不该等收尾（Flush → Finalize → remux，实测约 2 秒）才消失。
+        self.hud.take();
         if let Some(s) = self.session.as_ref() {
             s.stop(reason);
         }

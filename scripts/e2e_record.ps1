@@ -8,6 +8,8 @@
 #            落盘 MP4 能被 ffprobe 解析，且帧数 > 0
 #   C. 崩溃恢复
 #      判据：人为写一个 `.partial.mp4`，启动常驻进程后它被转成可播放的正式 MP4
+#   D. 奇数尺寸窗口录制（NV12 要求偶数尺寸，之前的硬失败）
+#      判据：产出正式 MP4 且能被 ffprobe 解析；成片分辨率为偶数
 #
 # 用法：
 #   powershell -NoProfile -ExecutionPolicy Bypass -File D:\github\screenloom\scripts\e2e_record.ps1
@@ -254,9 +256,12 @@ if ($app.HasExited) {
     $btnRight = $hw - 8.0 * $k
     $btnTop = 12.0 * $k
     $btnBottom = $hh - 12.0 * $k
-    $sx = [int]($co.X + ($btnLeft + $btnRight) / 2)
-    $sy = [int]($co.Y + ($btnTop + $btnBottom) / 2)
-    Write-Host "  点击停止按钮 ($sx,$sy)"
+    # 停止按钮在**客户区**里的中心（HUD 是 WS_POPUP，客户区原点 = 窗口原点）。
+    $btnCX = [int](($btnLeft + $btnRight) / 2)
+    $btnCY = [int](($btnTop + $btnBottom) / 2)
+    $sx = [int]($co.X + $btnCX)
+    $sy = [int]($co.Y + $btnCY)
+    Write-Host "  停止按钮客户区坐标 = ($btnCX,$btnCY)  屏幕坐标 = ($sx,$sy)"
 
     # 点击前先确认那个点上最顶层的窗口**就是 HUD**，否则点下去会打到别的窗口。
     $pt = New-Object Shot+POINT
@@ -272,11 +277,18 @@ if ($app.HasExited) {
       # 不能用「等 30 秒」的长等待 —— 那会把「点击落空」和「收尾慢」混为一谈，
       # 落空一次就白白等满 30 秒，录制继续跑，产物时长直接超标。
       $gone = [IntPtr]::Zero
-      for ($try = 1; $try -le 5 -and $gone -eq [IntPtr]::Zero; $try++) {
-        [Shot]::Click($sx, $sy)
-        Write-Host "  点击停止按钮 ($sx,$sy) — 第 $try 次"
+      $swClick = [Diagnostics.Stopwatch]::StartNew()
+      for ($try = 1; $try -le 10 -and $gone -eq [IntPtr]::Zero; $try++) {
+        # 用**窗口消息**点按钮，不动物理鼠标：这台机器上可能有别的自动化在
+        # 抢鼠标（实测光标会被带走），真实点击会随机落在按钮外面，
+        # HUD 把它们当成"拖动窗口"，测试就随机失败了。
+        # HUD 的按钮逻辑本来就是"拿客户区坐标判断点在不在按钮矩形里"，
+        # 这条路径才是真正要测的东西。
+        [Shot]::ClickClient($hud, $btnCX, $btnCY)
+        Write-Host "  点击停止按钮（客户区 $btnCX,$btnCY）— 第 $try 次"
         $gone = Wait-Window { if ([Shot]::Find('ScreenloomRecorderHud') -eq [IntPtr]::Zero) { [IntPtr]1 } else { [IntPtr]::Zero } } 2
       }
+      $swClick.Stop()
       if ($gone -eq [IntPtr]::Zero) {
         # 短轮询都没让 HUD 消失，再给一次长等待的机会（收尾确实可能慢）。
         $gone = Wait-Window { if ([Shot]::Find('ScreenloomRecorderHud') -eq [IntPtr]::Zero) { [IntPtr]1 } else { [IntPtr]::Zero } } 30
@@ -287,12 +299,21 @@ if ($app.HasExited) {
     } else {
         # 只认**本次录制新增**的文件：不能拿 A 用例留下的 cli_record.mp4 当证据，
         # 否则「停止后根本没落盘」也会被误判成 PASS。
-        $new = Get-ChildItem $RecDir -Filter '*.mp4' -ErrorAction SilentlyContinue |
-          Where-Object { -not $before.ContainsKey($_.Name) -and $_.Name -notlike '*.partial.mp4' } |
-          Sort-Object LastWriteTime -Descending
+        #
+        # HUD 消失 = 用户已经得到反馈；文件还要等收尾（Flush → Finalize → remux，
+        # 实测约 2 秒）才落盘，所以这里要**等文件出现**，不能只看 HUD。
+        $new = $null
+        $fileDeadline = (Get-Date).AddSeconds(30)
+        while ((Get-Date) -lt $fileDeadline) {
+          $new = Get-ChildItem $RecDir -Filter '*.mp4' -ErrorAction SilentlyContinue |
+            Where-Object { -not $before.ContainsKey($_.Name) -and $_.Name -notlike '*.partial.mp4' } |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($new) { break }
+          Start-Sleep -Milliseconds 300
+        }
         if (-not $new) {
-          $whyB = "停止后目录里没有**新增** MP4（目录: $RecDir）"
-          if (Test-Path $appOut) { $whyB += ' / ' + ((Get-Content $appOut -ErrorAction SilentlyContinue | Select-Object -Last 3) -join ' | ') }
+          $whyB = "停止后 30 秒内没有**新增** MP4（目录: $RecDir）"
+          if (Test-Path $appOut) { $whyB += ' / ' + ((Get-Content $appOut -Encoding UTF8 -ErrorAction SilentlyContinue | Select-Object -Last 3) -join ' | ') }
         } else {
           $v = $new | Select-Object -First 1
           # 时长上限放宽到 90 秒：机器负载高时收尾（Flush/Finalize/remux）会慢，
@@ -300,6 +321,7 @@ if ($app.HasExited) {
           $r = Test-Playable $v.FullName 15 1.0 90.0
           $okB = $r.Ok
           $whyB = "$($v.Name): codec=$($r.Codec) frames=$($r.Frames) dur=$($r.Duration)s → $($r.Reason)"
+          $whyB += "；停止响应 $([Math]::Round($swClick.Elapsed.TotalSeconds, 1))s"
           Write-Host "  产物: $($v.FullName)"
         }
       }
@@ -359,6 +381,89 @@ if (-not (Test-Path $seedPath)) {
 if ($okC) { Write-Host '  OK  崩溃残留被恢复成可播放的 MP4' }
 else { Write-Host "  !! $whyC" }
 $results += [pscustomobject]@{ Case = 'C 崩溃残留被恢复'; Pass = $okC; Detail = $whyC }
+
+# ================================================================ D. 奇数尺寸窗口录制
+Write-Host ''
+Write-Host '=== D. 奇数尺寸窗口录制（NV12 要求偶数尺寸） ==='
+# H.264/NV12 的色度是 2×2 降采样，宽高必须是偶数。奇数尺寸的窗口很常见，
+# 之前会**直接录不了**（捕获层报错 → 降级 GDI → 编码器再报错 → 零产物）。
+$oddHelper = Join-Path $Root 'scripts\_odd_window.ps1'
+$oddOut    = Join-Path $RecDir 'd_odd_window.mp4'
+$oddErr    = Join-Path $OutDir 'odd_window.err.log'
+$oddStd    = Join-Path $OutDir 'odd_window.out.log'
+$oddWinLog = Join-Path $OutDir 'odd_window_helper.log'
+$oddWinErr = Join-Path $OutDir 'odd_window_helper.err.log'
+foreach ($f in @($oddErr, $oddStd, $oddWinLog, $oddWinErr)) { if (Test-Path $f) { Remove-Item $f -Force } }
+
+$okD = $false
+$whyD = ''
+$winProc = $null
+try {
+  $winProc = Start-Process powershell -PassThru -WindowStyle Hidden `
+    -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $oddHelper) `
+    -RedirectStandardOutput $oddWinLog -RedirectStandardError $oddWinErr
+
+  # 等窗口真的出现（标题可见）再录。
+  $winHwnd = [IntPtr]::Zero
+  $deadline = (Get-Date).AddSeconds(20)
+  while ((Get-Date) -lt $deadline) {
+    $winHwnd = [Shot]::FindByTitle('ScreenloomOddProbe')
+    if ($winHwnd -ne [IntPtr]::Zero) { break }
+    Start-Sleep -Milliseconds 300
+  }
+
+  if ($winHwnd -eq [IntPtr]::Zero) {
+    $whyD = '没有出现 ScreenloomOddProbe 窗口'
+  } else {
+    $cr = New-Object Shot+RECT
+    [void][Shot]::GetClientRect($winHwnd, [ref]$cr)
+    $cw = $cr.R - $cr.L
+    $ch = $cr.B - $cr.T
+    Write-Host "  窗口客户区 = ${cw}x${ch}（奇数 = 正是要覆盖的场景）"
+
+    $p = Start-Process -FilePath $Exe -PassThru -NoNewWindow `
+      -ArgumentList @(
+        '--config', $CfgPath,
+        '--record', '3',
+        '--record-out', $oddOut,
+        '--record-fps', '15',
+        '--record-countdown', '0',
+        '--record-window', 'ScreenloomOddProbe'
+      ) `
+      -RedirectStandardOutput $oddStd -RedirectStandardError $oddErr
+    $p.WaitForExit(90000) | Out-Null
+    if (-not $p.HasExited) { $p | Stop-Process -Force; $whyD = '录制超时（>90s）' }
+    elseif (-not (Test-Path $oddOut)) {
+      $whyD = '奇数尺寸窗口没有产出 MP4'
+      if (Test-Path $oddErr) {
+        $whyD += ' / ' + ((Get-Content $oddErr -Encoding UTF8 -ErrorAction SilentlyContinue |
+          Where-Object { $_.Trim() } | Select-Object -Last 3) -join ' | ')
+      }
+    } else {
+      $r = Test-Playable $oddOut 15 1.0 20.0
+      $okD = $r.Ok
+      $whyD = "codec=$($r.Codec) frames=$($r.Frames) dur=$($r.Duration)s → $($r.Reason)"
+      # 判据：成片分辨率必须是**偶数**（NV12 的硬约束）。
+      $vw = Get-StreamField $oddOut 'width'
+      $vh = Get-StreamField $oddOut 'height'
+      if ($okD) {
+        if (-not $vw -or -not $vh) {
+          $okD = $false; $whyD += '；但 ffprobe 读不到分辨率'
+        } elseif (([int]$vw % 2) -ne 0 -or ([int]$vh % 2) -ne 0) {
+          $okD = $false; $whyD += "；但成片分辨率 ${vw}x${vh} 不是偶数"
+        } else {
+          $whyD += "；分辨率 ${vw}x${vh}（偶数）"
+        }
+      }
+      Write-Host "  产物: $oddOut"
+    }
+  }
+} finally {
+  if ($winProc -and -not $winProc.HasExited) { $winProc | Stop-Process -Force -ErrorAction SilentlyContinue }
+}
+if ($okD) { Write-Host '  OK  奇数尺寸窗口也能录出可播 MP4' }
+else { Write-Host "  !! $whyD" }
+$results += [pscustomobject]@{ Case = 'D 奇数尺寸窗口可录制'; Pass = $okD; Detail = $whyD }
 
 # ================================================================ 汇总
 Write-Host ''

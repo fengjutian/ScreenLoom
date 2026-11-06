@@ -77,14 +77,12 @@ impl ScreenStream {
             .Size()
             .map_err(|e| Error::Capture(format!("获取捕获目标尺寸失败: {e}")))?;
 
-        // NV12 的色度是 2×2 降采样，宽高必须为偶数。
-        if size.Width % 2 != 0 || size.Height % 2 != 0 {
-            return Err(Error::Capture(format!(
-                "录制目标尺寸 {width}x{height} 不是偶数，无法转成 NV12",
-                width = size.Width,
-                height = size.Height
-            )));
-        }
+        // 宽高可能不是偶数：NV12 的色度是 2×2 降采样，**录制**要求偶数尺寸，
+        // 但那是**录制器**的责任 —— 它把帧补齐到偶数即可（见
+        // `screenloom-app/src/record/source.rs` 的 `even_up` / `fit_frame`）。
+        //
+        // 这里如果直接报错，奇数尺寸的窗口（很常见）就**完全录不了**，
+        // 而截图/其它调用方根本不需要偶数尺寸。
 
         let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
             &backend.winrt_device,

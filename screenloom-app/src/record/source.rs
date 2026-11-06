@@ -38,6 +38,60 @@ enum Inner {
     Gdi(GdiSource),
 }
 
+/// 把尺寸向上取整到偶数。
+///
+/// NV12 的色度是 2×2 降采样，宽高必须为偶数。奇数尺寸的窗口很常见
+/// （521x425 这种），直接报错等于**完全录不了**，所以这里向上补一像素，
+/// 由 [`fit_frame`] 把帧补齐。
+fn even_up(v: u32) -> u32 {
+    v + (v & 1)
+}
+
+/// 把帧调整到目标尺寸：多了就裁，少了就补。
+///
+/// 补边用**最后一列/行的像素**复制，而不是填黑 —— 一条黑边在画面里很显眼。
+fn fit_frame(f: Frame, tw: u32, th: u32) -> Frame {
+    if f.w == tw && f.h == th {
+        return f;
+    }
+    let (tw, th) = (tw as usize, th as usize);
+    let (fw, fh) = (f.w as usize, f.h as usize);
+    let mut data = vec![0u8; tw * th * 4];
+    let cw = fw.min(tw);
+    let ch = fh.min(th);
+    let row_bytes = cw * 4;
+    for row in 0..ch {
+        let src = row * fw * 4;
+        let dst = row * tw * 4;
+        data[dst..dst + row_bytes].copy_from_slice(&f.data[src..src + row_bytes]);
+    }
+    // 右侧不足一列时，用该行最后一列的像素补齐。
+    if tw > cw && cw > 0 {
+        for row in 0..ch {
+            let s = row * fw * 4 + (cw - 1) * 4;
+            let px = [f.data[s], f.data[s + 1], f.data[s + 2], f.data[s + 3]];
+            for x in cw..tw {
+                let d = row * tw * 4 + x * 4;
+                data[d..d + 4].copy_from_slice(&px);
+            }
+        }
+    }
+    // 底部不足一行时，用最后一行补齐。
+    if th > ch && ch > 0 {
+        let src_row = (ch - 1) * tw * 4;
+        let last: Vec<u8> = data[src_row..src_row + tw * 4].to_vec();
+        for y in ch..th {
+            let dst = y * tw * 4;
+            data[dst..dst + tw * 4].copy_from_slice(&last);
+        }
+    }
+    Frame {
+        w: tw as u32,
+        h: th as u32,
+        data,
+    }
+}
+
 /// 录制帧源。
 pub struct FrameSource {
     inner: Inner,
@@ -60,6 +114,7 @@ impl FrameSource {
                 match ScreenStream::start_with_cursor(CaptureTarget::Window(h), cursor) {
                     Ok(s) => {
                         let (w, h) = s.size();
+                        let (w, h) = (even_up(w), even_up(h));
                         Ok(FrameSource {
                             inner: Inner::Wgc(s),
                             w,
@@ -73,6 +128,7 @@ impl FrameSource {
                         eprintln!("WGC 窗口录制不可用（{e}），降级 GDI/PrintWindow");
                         let gdi = GdiSource::new(GdiTarget::Window(hwnd), fps)?;
                         let (w, h) = gdi.size();
+                        let (w, h) = (even_up(w), even_up(h));
                         Ok(FrameSource {
                             inner: Inner::Gdi(gdi),
                             w,
@@ -100,8 +156,8 @@ impl FrameSource {
                 let (ow, oh) = scale_to.unwrap_or((w, h));
                 Ok(FrameSource {
                     inner: Inner::Gdi(gdi),
-                    w: ow,
-                    h: oh,
+                    w: even_up(ow),
+                    h: even_up(oh),
                     crop: None,
                     scale_to,
                     backend_name: "GDI(virtual)",
@@ -118,8 +174,10 @@ impl FrameSource {
                 let mut fs = open_capture(CaptureTarget::Monitor(mon.index), fps, cursor)?;
                 let x = (r.x - mon.bounds.x).max(0) as u32;
                 let y = (r.y - mon.bounds.y).max(0) as u32;
-                let w = ((r.w.max(2) as u32) & !1).min(fs.w.saturating_sub(x));
-                let h = ((r.h.max(2) as u32) & !1).min(fs.h.saturating_sub(y));
+                // 右/下边界也要取偶：显示器尺寸取偶后 `fs.w - x` 可能是奇数，
+                // 直接 min() 会选出奇数尺寸，区域录制就废了。
+                let w = (((r.w.max(2) as u32) & !1).min(fs.w.saturating_sub(x))) & !1;
+                let h = (((r.h.max(2) as u32) & !1).min(fs.h.saturating_sub(y))) & !1;
                 if w < 2 || h < 2 {
                     return Err(Error::Capture("录制区域无效".into()));
                 }
@@ -145,11 +203,14 @@ impl FrameSource {
             }),
             Inner::Gdi(s) => s.take_latest()?,
         };
-        Ok(match (f, self.crop, self.scale_to) {
+        let cropped = match (f, self.crop, self.scale_to) {
             (Some(f), Some(c), _) => Some(crop_frame(f, c)),
             (Some(f), None, Some((w, h))) => Some(scale_frame(f, w, h)),
             (f, _, _) => f,
-        })
+        };
+        // 统一到目标尺寸（偶数）：源尺寸可能是奇数（窗口 521x425 这种），
+        // 不归一的话 NV12 转换会直接失败，录制根本跑不起来。
+        Ok(cropped.map(|fr| fit_frame(fr, self.w, self.h)))
     }
 }
 
@@ -157,6 +218,7 @@ fn open_capture(target: CaptureTarget, fps: u32, cursor: bool) -> Result<FrameSo
     match ScreenStream::start_with_cursor(target, cursor) {
         Ok(s) => {
             let (w, h) = s.size();
+            let (w, h) = (even_up(w), even_up(h));
             Ok(FrameSource {
                 inner: Inner::Wgc(s),
                 w,
@@ -176,6 +238,7 @@ fn open_capture(target: CaptureTarget, fps: u32, cursor: bool) -> Result<FrameSo
             };
             let gdi = GdiSource::new(GdiTarget::Monitor(monitor), fps)?;
             let (w, h) = gdi.size();
+            let (w, h) = (even_up(w), even_up(h));
             Ok(FrameSource {
                 inner: Inner::Gdi(gdi),
                 w,
@@ -189,16 +252,19 @@ fn open_capture(target: CaptureTarget, fps: u32, cursor: bool) -> Result<FrameSo
 }
 
 fn crop_frame(f: Frame, c: Crop) -> Frame {
-    let mut data = vec![0u8; (c.w * c.h * 4) as usize];
-    for row in 0..c.h {
+    // 源帧尺寸可能小于请求的裁剪区（显示器尺寸取偶后多出来的那一列），
+    // 必须夹住，否则读越界直接 panic。
+    let cw = c.w.min(f.w.saturating_sub(c.x));
+    let ch = c.h.min(f.h.saturating_sub(c.y));
+    let mut data = vec![0u8; (cw * ch * 4) as usize];
+    for row in 0..ch {
         let src = (((c.y + row) * f.w + c.x) * 4) as usize;
-        let dst = (row * c.w * 4) as usize;
-        data[dst..dst + (c.w * 4) as usize]
-            .copy_from_slice(&f.data[src..src + (c.w * 4) as usize]);
+        let dst = (row * cw * 4) as usize;
+        data[dst..dst + (cw * 4) as usize].copy_from_slice(&f.data[src..src + (cw * 4) as usize]);
     }
     Frame {
-        w: c.w,
-        h: c.h,
+        w: cw,
+        h: ch,
         data,
     }
 }
@@ -320,5 +386,70 @@ impl Drop for GdiSource {
         if let Some(h) = self.join.take() {
             let _ = h.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame(w: u32, h: u32, fill: u8) -> Frame {
+        Frame {
+            w,
+            h,
+            data: vec![fill; (w * h * 4) as usize],
+        }
+    }
+
+    #[test]
+    fn even_up_rounds_to_even() {
+        assert_eq!(even_up(520), 520);
+        assert_eq!(even_up(521), 522);
+        assert_eq!(even_up(1), 2);
+        assert_eq!(even_up(0), 0);
+    }
+
+    #[test]
+    fn fit_frame_pads_odd_width_by_replicating_edge() {
+        // 3x2 红帧 → 4x2：第 4 列必须也是红（复制边缘，不能是黑边）。
+        let f = frame(3, 2, 200);
+        let out = fit_frame(f, 4, 2);
+        assert_eq!((out.w, out.h), (4, 2));
+        assert_eq!(out.data.len(), 4 * 2 * 4);
+        for i in 0..8 {
+            assert_eq!(out.data[i * 4], 200, "第 {i} 个像素应是复制的红色");
+        }
+    }
+
+    #[test]
+    fn fit_frame_pads_odd_height_by_replicating_edge() {
+        let f = frame(2, 3, 77);
+        let out = fit_frame(f, 2, 4);
+        assert_eq!((out.w, out.h), (2, 4));
+        // 最后一行 = 倒数第二行（复制）
+        assert_eq!(&out.data[16..20], &out.data[8..12]);
+    }
+
+    #[test]
+    fn fit_frame_crops_oversized_frame() {
+        let f = frame(5, 5, 9);
+        let out = fit_frame(f, 4, 4);
+        assert_eq!((out.w, out.h), (4, 4));
+        assert_eq!(out.data.len(), 4 * 4 * 4);
+    }
+
+    #[test]
+    fn fit_frame_is_identity_when_sizes_match() {
+        let f = frame(4, 4, 3);
+        let out = fit_frame(f, 4, 4);
+        assert_eq!((out.w, out.h), (4, 4));
+    }
+
+    #[test]
+    fn crop_frame_clamps_to_source_bounds() {
+        // 源帧只有 3 宽，却要裁 4 宽 → 必须夹住，不能越界 panic。
+        let f = frame(3, 2, 5);
+        let out = crop_frame(f, Crop { x: 0, y: 0, w: 4, h: 2 });
+        assert_eq!((out.w, out.h), (3, 2));
     }
 }

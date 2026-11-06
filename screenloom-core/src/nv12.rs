@@ -31,6 +31,10 @@ impl Nv12Image {
     /// 新建一张 NV12 图像（内容全 0）。
     ///
     /// **宽高必须是正偶数** —— NV12 的色度是 2×2 降采样，奇数尺寸无法表达。
+    ///
+    /// 录制链路保证传进来的都是偶数（见
+    /// `screenloom-app/src/record/source.rs` 的 `even_up` / `fit_frame`）；
+    /// 这里再挡一道，防止别处漏了补边直接把整段录制搞崩。
     pub fn new(w: u32, h: u32) -> Result<Nv12Image> {
         if w == 0 || h == 0 {
             return Err(Error::Image(format!("NV12 尺寸非法: {w}x{h}")));

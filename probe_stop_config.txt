@@ -1,0 +1,8 @@
+hotkey = Alt+A
+record_dir = D:\github\screenloom\probes\e2e_out\stoplat
+record_audio_system = false
+record_audio_mic = false
+record_countdown = 0
+record_show_hud = false
+record_fps = 30
+record_bitrate = 8000000
